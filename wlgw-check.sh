@@ -5,7 +5,7 @@
 #
 # Uncomment this statement for debug echos
 DEBUG=1
-b_dev=false
+b_dev=true
 scriptname="`basename $0`"
 
 # Serial device that PG-5G cable is plugged into
@@ -20,7 +20,8 @@ RMS_PROXIMITY_FILE_OUT="$TMPDIR/rmsgwprox.txt"
 
 BAND_2M_LO_LIM=144000000
 BAND_2M_HI_LIM=148000000
-BAND_440_LO_LIM=420000000
+# 420 to 430 MHz is prohibited north of Line A
+BAND_440_LO_LIM=430000000
 BAND_440_HI_LIM=450000000
 
 # Initialize grid square variable
@@ -59,8 +60,8 @@ function in_path() {
     if [ $? -ne 0 ] ; then
         echo "$scriptname: Program: $program_name not found in path ... exiting"
         exit 1
-    else
-       dbgecho "Program: $program_name found"
+#    else
+#       dbgecho "Program: $program_name found"
     fi
     return $retcode
 }
@@ -135,10 +136,10 @@ function get_location() {
 # Return information programmed into memory channel
 function get_chan() {
 
-    dbgecho "get_chan: arg: $1"
+#    dbgecho "get_chan: arg: $1"
     chan_info=$(rigctl -r $SERIAL_DEVICE -m $RADIO_MODEL_ID h $1)
     ret_code=$?
-    echo "Ret code=$ret_code"
+#    echo "Ret code=$ret_code"
 }
 
 # ===== function get_mem
@@ -165,14 +166,19 @@ function get_freq() {
 }
 
 # ===== function check_radio
+# arg1: radio memory index
+
 function check_radio() {
 
     in_path rigctl
-    mem_chan=
-    get_mem
+    mem_chan=$1
+#    get_mem
 
     chan_info=
     get_chan $mem_chan
+    if [ $? -ne 0 ] ; then
+        echo "Error could not get channel info from radio"
+    fi
     #echo -e "Channel info\n$chan_info"
 
     # Get Alpha-Numeric name of channel in radio
@@ -184,10 +190,6 @@ function check_radio() {
     # Get Frequency in MHz of channel number
     # Collapse white space
     chan_freq=$(grep -i "Freq:" <<<"$chan_info" | head -n1 | tr -s '[[:space:]] ' | cut -d ' ' -f2)
-
-    get_freq
-
-    echo "Chan: $mem_chan, name: $chan_name, chan freq: $chan_freq, Frequency: $freq"
 }
 
 # ==== main
@@ -243,17 +245,25 @@ dbgecho "Using grid square: $gridsquare"
 
 # For DEV do not refresh the rmslist output file
 if ! $b_dev ; then
+    echo
     echo "Refreshing RMS List"
+    echo
     # Assume rmslist.sh installed to ~/bin
     # rmsglist arg1=distance in miles, arg2=grid square
     in_path "rmslist.sh"
     rmslist.sh 40 $gridsquare -
 fi
 
-check_radio
 
-# Iterate each line of the RMS Proximit file
+# Assign some variables
+get_mem
+check_radio $mem_chan
+get_freq
+echo "Chan: $mem_chan, name: $chan_name, chan freq: $chan_freq, Frequency: $freq"
 
+# Iterate each line of the RMS Proximity file
+
+printf "\nRMS GW\t    Freq\tDist\tName\tIndex\n"
 while read fileline ; do
 
     # collapse all spaces
@@ -276,8 +286,25 @@ while read fileline ; do
         lstf1=${listfreq/./}
         # Pad with trailing spaces to 9 characters
         lstf1=$(printf "%-0.9s" "${lstf1}000000000")
+        # Compare frequency in csv file to frequency from Winlink Proximity file
         if [ "$freq" == "$lstf1" ] ; then
+            # Get Radio index from csv file
+            radio_index=$(cut -d',' -f1 <<< $freqlist)
+            # Get Alpha-numeric name from csv file
             freq_name=$(cut -d',' -f2 <<< $freqlist)
+
+            # Verify with radio
+            check_radio $radio_index
+            # Get rid of decimal in frequency
+            radfreq=${chan_freq/./}
+            # Pad with trailing spaces to 9 characters
+            radfreq=$(printf "%-0.9s" "${radfreq}000000000")
+            if [ "$radfreq" == "$freq" ] ; then
+                status_str="OK"
+            else
+                status_str="Err"
+            fi
+
 #            echo "$freq_name: $listfreq ($lstf1) ($freq) "
         fi
 
@@ -287,7 +314,7 @@ while read fileline ; do
     if [ "$distance" != 0 ] && (
     ( (( "$freq" >= 144000000 )) && (( "$freq" < 148000000 )) ) ||
     ( (( "$freq" >= 420000000 )) && (( "$freq" < 450000000 )) ) ); then
-        echo "$gw_name $freq $distance $freq_name"
+        printf "%-10s  %s\t%2s\t%s\t%3s  %s\n"  "$gw_name" "$freq" "$distance" "$freq_name" "$radio_index" "$status_str"
     fi
 
 done < $RMS_PROXIMITY_FILE_OUT
