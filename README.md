@@ -5,11 +5,11 @@ Automatically find and test  a Winlink RMS Gateway
 
 This script is used with the following programs to locate and connect to a Winlink RMS Gateway
 
-paclink-unix
-rmslist.sh (nwdigital radio n7nix repo)
-rigctl (HamLib)
-gpsd
-latlon2grid
+* paclink-unix
+* rmslist.sh (nwdigital radio n7nix repo)
+* rigctl (HamLib)
+* gpsd
+* latlon2grid
 
 #### wlgw-check.sh
 
