@@ -85,7 +85,7 @@ void calcLocator(char *dst, double lat, double lon) {
         o1 = (int)adjLon/20;
         o2 = (int)(adjLon/2) % 10;
 
-        rLon = (adjLon - 2*(int)(adjLon/2)) *60;
+        rLon = (adjLon - 2*(int)(adjLon/2)) * 60;
         o3 = (int)(rLon/5);
 
         /* latitude */
@@ -95,9 +95,6 @@ void calcLocator(char *dst, double lat, double lon) {
 
         rLat = (adjLat - (int)(adjLat)) * 60;
         a3 = (int)(rLat/2.5);
-
-
-        /* printf("%d %d %d, %d %d %d\n", o1, o2, o3, a1, a2, a3); */
 
         dst[0] = (char)o1 + 'A';
         dst[1] = (char)a1 + 'A';
