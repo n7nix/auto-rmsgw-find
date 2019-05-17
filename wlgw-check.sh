@@ -14,6 +14,8 @@ scriptname="`basename $0`"
 
 # Serial device that PG-5G cable is plugged into
 SERIAL_DEVICE="/dev/ttyUSB0"
+# Choose which radio left (VFOA) or right (VFOB)
+DATBND="VFOA"
 
 # Radio model number used by HamLib
 RADIO_MODEL_ID=234
@@ -132,21 +134,24 @@ function get_location() {
     fi
 }
 
-# ===== function get_chan
+# ===== function get_ext_data_band
 
-# Arg 1: memory channel number integer
-# Return information programmed into memory channel
-function get_chan() {
+# Could return any of the following: (see tmd710.c)
+#   TMD710_EXT_DATA_BAND_A 0
+#   TMD710_EXT_DATA_BAND_B 1
+#   TMD710_EXT_DATA_BAND_TXA_RXB 2
+#   TMD710_EXT_DATA_BAND_TXB_RXA 3
 
-#    dbgecho "get_chan: arg: $1"
-    chan_info=$(rigctl -r $SERIAL_DEVICE -m $RADIO_MODEL_ID h $1)
-    ret_code=$?
-#    echo "Ret code=$ret_code"
+function get_ext_data_band() {
+    ret_code=$(rigctl -r /dev/ttyUSB0  -m234  l EXTDATABAND)
+    return $ret_code
 }
 
 # ===== function get_mem
 
 # Return memory channel index that radio is using
+# Need to set vfo to DATBND usually VFOA or VFOB
+
 function get_mem() {
 
     mem_chan=$(rigctl -r $SERIAL_DEVICE -m $RADIO_MODEL_ID e)
@@ -154,13 +159,24 @@ function get_mem() {
     dbgecho "get_mem: Ret code=$ret_code"
 }
 
+# ===== function get_chan
+
+# Arg 1: memory channel number integer
+# Return information programmed into memory channel
+function get_chan() {
+
+#    dbgecho "get_chan: arg: $1"
+    chan_info=$(rigctl -r $SERIAL_DEVICE -m $RADIO_MODEL_ID  h $1)
+    ret_code=$?
+#    echo "Ret code=$ret_code"
+}
 
 # ===== function get_freq
 
 # Return frequency that radio is using
 function get_freq() {
 
-    freq=$(rigctl -r $SERIAL_DEVICE -m $RADIO_MODEL_ID f)
+    freq=$(rigctl -r $SERIAL_DEVICE -m $RADIO_MODEL_ID --vfo f $DATBND)
     ret_code=$?
     dbgecho "get_freq: Ret code=$ret_code"
 }
@@ -204,9 +220,13 @@ function check_gateway() {
         echo "Failed to set radio frequency on memory channel $mem_chan for Gateway $gw_call"
         return $connect_status
     fi
+    if [ 0 -eq 1 ] ; then
     # Connect with paclink-unix
      wl2kax25 -c "$gw_call"
      connect_status="$?"
+    else
+        connect_status=0
+    fi
      return $connect_status
 }
 
@@ -368,7 +388,7 @@ while read fileline ; do
             fi
         fi
         # Debug only: quit or pause after 4 attempts
-        if (( gateway_count > 4 )) ; then
+        if (( gateway_count > 25 )) ; then
             break;
         fi
     else
