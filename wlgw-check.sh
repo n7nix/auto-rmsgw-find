@@ -11,6 +11,8 @@
 DEBUG=1
 b_dev=true
 scriptname="`basename $0`"
+TMPDIR="$HOME/tmp"
+GATEWAY_LOGFILE="$TMPDIR/gateway.log"
 
 # Serial device that PG-5G cable is plugged into
 SERIAL_DEVICE="/dev/ttyUSB0"
@@ -140,7 +142,7 @@ function debug_check() {
     strarg="$1"
     freq=$(rigctl -r /dev/ttyUSB0  -m234 f)
     xcurr_freq=$(rigctl -r /dev/ttyUSB0  -m234 --vfo f $DATBND)
-    echo "debug_check: Current frequency: $strarg VFOA: $xcurr_freq, freq: $freq"
+    echo "debug_check: $strarg: Current frequency: VFOA: $xcurr_freq, freq: $freq"
 }
 
 # ===== function set_vfo_mode
@@ -477,7 +479,9 @@ set_vfo_mode
 gateway_count=0
 connect_count=0
 
-printf "\nRMS GW\t    Freq\tDist\tName\tIndex  ChanStat  ConnStat\n"
+echo "Start: $(date "+%Y %m %d %T %Z"):" | tee -a $GATEWAY_LOGFILE
+printf "\nRMS GW\t    Freq\tDist\tName\tIndex  ChanStat  ConnStat Time\n" | tee -a $GATEWAY_LOGFILE
+
 while read fileline ; do
 
     # collapse all spaces
@@ -504,6 +508,7 @@ while read fileline ; do
     if [ "$distance" != 0 ] && (
     ( (( "$wl_freq" >= 144000000 )) && (( "$wl_freq" < 148000000 )) ) ||
     ( (( "$wl_freq" >= 420000000 )) && (( "$wl_freq" < 450000000 )) ) ); then
+        start_sec=$SECONDS
         chan_status="OK"
         gateway_count=$((gateway_count + 1))
 
@@ -511,26 +516,32 @@ while read fileline ; do
         check_gateway $wl_freq "$gw_name"
         if [ "$?" -eq 0 ] ; then
             connect_count=$((connect_count + 1))
+            connect_status="OK"
         else
+            connect_status="TO"
             echo
             echo "Call to wl2kax25 timed out"
             echo
-        fi
-        # Debug only: quit or pause after some attempts
-        if (( gateway_count > 5 )) ; then
-            break;
         fi
     else
 #        dbgecho "Changing channel status to 'Unqaul' for freq: $wl_freq & gateway $gw_name"
         chan_status="Unqual"
     fi
 
-    printf "%-10s  %s\t%2s\t%s\t%4s   %6s\t%4s\n"  "$gw_name" "$wl_freq" "$distance" "$freq_name" "$radio_index" "$chan_status" "$connect_status"
+    printf "%-10s  %s\t%2s\t%s\t%4s   %6s\t%4s\t%d\n"  "$gw_name" "$wl_freq" "$distance" "$freq_name" "$radio_index" "$chan_status" "$connect_status" $((SECONDS-start_sec)) | tee -a $GATEWAY_LOGFILE
 
+    # Debug only: quit or pause after some attempts
+    echo "Modulo 5 $((gateway_count/5))"
+    if [ 1 -eq 0 ] ; then
+        if (( gateway_count > 5 )) ; then
+            echo "Sleeping for 5 min"
+            sleep 5m
+        fi
+    fi
 done < $RMS_PROXIMITY_FILE_OUT
 
 echo
-echo "Found $gateway_count RMS Gateways, connected: $connect_count"
+echo "Finish: echo "$(date "+%Y %m %d %T %Z"): Found $gateway_count RMS Gateways, connected: $connect_count"  | tee -a $GATEWAY_LOGFILE
 echo
 # Set radio back to previous memory channel
 set_memchan_mode
