@@ -14,7 +14,7 @@ scriptname="`basename $0`"
 
 # Serial device that PG-5G cable is plugged into
 SERIAL_DEVICE="/dev/ttyUSB0"
-# Choose which radio left (VFOA) or right (VFOB)
+# Choose which radio left (VFOA) or right (VFOB) is DATA Radio
 DATBND="VFOA"
 
 # Radio model number used by HamLib
@@ -134,6 +134,27 @@ function get_location() {
     fi
 }
 
+# ===== function debug_check
+function debug_check() {
+
+    strarg="$1"
+    freq=$(rigctl -r /dev/ttyUSB0  -m234 f)
+    xcurr_freq=$(rigctl -r /dev/ttyUSB0  -m234 --vfo f $DATBND)
+    echo "debug_check: Current frequency: $strarg VFOA: $xcurr_freq, freq: $freq"
+}
+
+# ===== function set_vfo_mode
+function set_vfo_mode() {
+#    dbgecho "Set vfo mode to $DATBND"
+    rigctl -r /dev/ttyUSB0  -m234  V $DATBND
+}
+
+# ===== function set_memchan_mode
+function set_memchan_mode() {
+    dbgecho "Set vfo mode to MEM"
+    rigctl -r /dev/ttyUSB0  -m234  V MEM
+}
+
 # ===== function get_ext_data_band
 
 # Could return any of the following: (see tmd710.c)
@@ -147,6 +168,56 @@ function get_ext_data_band() {
     return $ret_code
 }
 
+# ===== function find_mem_chan
+# Sets 'radio_index'  memory channel index number for a given frequency
+# Arg1: frequency
+
+function find_mem_chan() {
+
+    set_freq="$1"
+    freq_name="unknown"
+    retcode=1
+
+    while read freqlist ; do
+        chan_status="Err"
+        # Get frequency  from csv programming file
+        listfreq=$(cut -d',' -f3 <<< $freqlist)
+
+        # Get rid of decimal
+        lstf1=${listfreq/./}
+        # Pad with trailing spaces to 9 characters
+        lstf1=$(printf "%-0.9s" "${lstf1}000000000")
+        # Compare frequency in csv file to frequency requested
+        if [ "$set_freq" == "$lstf1" ] ; then
+            # Get Radio index from csv file
+            radio_index=$(cut -d',' -f1 <<< $freqlist)
+            # Get Alpha-numeric name from csv file
+            freq_name=$(cut -d',' -f2 <<< $freqlist)
+
+            # Verify with radio
+            check_radio_mem $radio_index
+            # Get rid of decimal in frequency
+            radfreq=${chan_freq/./}
+            # Pad with trailing spaces to 9 characters
+            radfreq=$(printf "%-0.9s" "${radfreq}000000000")
+            # Compare frequency from radio memory channel to required set frequency
+            if [ "$radfreq" == "$set_freq" ] ; then
+                chan_status="OK"
+                retcode=0
+            else
+                chan_status="Err"
+                radio_index="   "
+            fi
+
+#            echo "$freq_name: $listfreq ($lstf1) ($wl_freq) "
+            # break on match of csv file & required set frequency
+            break;
+        fi
+
+    done < $DIGI_FREQ_LIST
+    return $retcode
+}
+
 # ===== function get_mem
 
 # Return memory channel index that radio is using
@@ -155,8 +226,14 @@ function get_ext_data_band() {
 function get_mem() {
 
     mem_chan=$(rigctl -r $SERIAL_DEVICE -m $RADIO_MODEL_ID e)
-    ret_code=$?
-    dbgecho "get_mem: Ret code=$ret_code"
+    grep -i "error" <<< $mem_chan > /dev/null 2>&1
+    retcode=$?
+    if [ $retcode -eq 0 ] ; then
+        echo "In VFO mode"
+    else
+        echo "In Mem channel mode"
+    fi
+    return $ret_code
 }
 
 # ===== function get_chan
@@ -171,20 +248,40 @@ function get_chan() {
 #    echo "Ret code=$ret_code"
 }
 
-# ===== function get_freq
+# ===== function get_vfo_freq
 
-# Return frequency that radio is using
-function get_freq() {
+# Return frequency that radio is using on the DATA BAND
+function get_vfo_freq() {
 
     freq=$(rigctl -r $SERIAL_DEVICE -m $RADIO_MODEL_ID --vfo f $DATBND)
     ret_code=$?
-    dbgecho "get_freq: Ret code=$ret_code"
+    dbgecho "get_vfo_freq: Ret code=$ret_code"
 }
 
-# ===== function check_radio
+# ===== function check_radio_band
+function check_radio_band() {
+
+vfo_mode=$(rigctl -r /dev/ttyUSB0 -m234 v)
+if ["$vfo_mode" -ne "MEM" ] ; then
+    rigctl -r /dev/ttyUSB0 -m234 V MEM
+fi
+curr_freq=$(rigctl -r /dev/ttyUSB0 -m234 f)
+
+b_2MBand=false
+if (( "$curr_freq" >= 144000000 )) && (( "$curr_freq" < 148000000 )) ; then
+    b_2MBand=true
+fi
+
+# Set frequency to 440125000
+rigctl -r $SERIAL_DEVICE -m $RADIO_MODEL_ID E 131
+
+rigctl -r /dev/ttyUSB0 -m234 F 440125000
+
+}
+# ===== function check_radio_mem
 # arg1: radio memory index
 
-function check_radio() {
+function check_radio_mem() {
 
     mem_chan=$1
 #    get_mem
@@ -209,18 +306,53 @@ function check_radio() {
 
 #===== function check_gateway
 # arg1: readio memory index
+# Set 2M frequencies with VFO & 440 frequencies with memory index
+
 function check_gateway() {
-    mem_chan="$1"
+    gw_freq="$1"
     gw_call="$2"
+    # Set 'failed' return code
     connect_status=1
 
-    dbgecho "Connect to: $gw_call with radio  memory channel $mem_chan"
-    rigctl -r $SERIAL_DEVICE -m $RADIO_MODEL_ID E $mem_chan
-    if [ "$?" -ne 0 ] ; then
-        echo "Failed to set radio frequency on memory channel $mem_chan for Gateway $gw_call"
-        return $connect_status
+    dbgecho "Connect to: $gw_call with radio using freq $gw_freq"
+    debug_check "start"
+
+    if (( gw_freq >= 144000000 )) && (( gw_freq < 148000000 )) ; then
+        b_2MBand=true
+        vfo_mode=$(rigctl -r /dev/ttyUSB0 -m234 v)
+        if [ "$vfo_mode" == "MEM" ] ; then
+            echo "Set VFO radio band to 2M"
+            # Fix this
+            rigctl -r /dev/ttyUSB0 -m234 E 35
+            debug_check "2M"
+        fi
+        set_vfo_mode
+# This errors out
+#       rigctl -r $SERIAL_DEVICE -m $RADIO_MODEL_ID --vfo F $gw_freq $DATBND
+        rigctl -r $SERIAL_DEVICE -m $RADIO_MODEL_ID F $gw_freq
+    else
+        # Set 440 frequencies with a memory index
+        set_memchan_mode
+        find_mem_chan $gw_freq
+        if [ $? -ne 0 ] ; then
+            echo "Can not set frequency $gw_freq, not in frequency list."
+            return 1
+        fi
+        rigctl -r $SERIAL_DEVICE -m $RADIO_MODEL_ID E $radio_index
+        debug_check "440"
     fi
-    if [ 0 -eq 1 ] ; then
+
+    # Verify frequency has been set
+    read_freq=$(rigctl -r $SERIAL_DEVICE  -m234 f)
+
+    if [ "$read_freq" -ne "$gw_freq" ] ; then
+        echo "Failed to set frequency: $gw_freq for Gateway: $gw_call"
+        return $connect_status
+    else
+        dbgecho "Frequency $read_freq set OK"
+    fi
+
+    if [ 1 -eq 1 ] ; then
     # Connect with paclink-unix
      wl2kax25 -c "$gw_call"
      connect_status="$?"
@@ -246,11 +378,6 @@ for progname in $PROGRAM_LIST ; do
         b_exitnow=true
     fi
 done
-
-# Also need the csv programming file, just the NET items.
-if [ ! -e "$DIGI_FREQ_LIST" ] ; then
-    b_exitnow=true
-fi
 
 if $b_exitnow ; then
     exit 1
@@ -304,14 +431,46 @@ if ! $b_dev ; then
     rmslist.sh 40 $gridsquare -
 fi
 
+# Get which Radio is designated digital
+data_band=get_ext_data_band
+
+dbgecho "Data is on band $((data_band))"
+
+if (( data_band < 2 )) ; then
+    # Convert ascii character to decimal value
+    dec_char=$(printf "%d" "'A")
+    dec_char=$((dec_char + $((data_band)) ))
+    # Convert decimal value back to ascii character
+    setbnd=$(printf \\$(printf '%03o' "$dec_char" ))
+##    printf "Decimal %d, Character %c\n" "$dec_char" "$setbnd"
+
+    # Make DATA BAND variable either VFOA or VFOB
+    DATBND=$(printf "VFO%c" $setbnd)
+    echo "Using $DATBND as data radio"
+
+else
+    echo "Data channel is $data_band, needs to be either 0 or 1"
+    exit 1
+fi
+
+# Save some state so radio is in same condition as it started
+
+# Set radio to the DATA radio
+# So this command will set which radio in the TM-V71 is default radio
+rigctl  -r /dev/ttyUSB0 -m234  --vfo f $DATBND
 
 # Assign some variables
+
+set_memchan_mode
 get_mem
-check_radio $mem_chan
-# Save current memory channel so can restore on exit
-get_freq
 save_mem_chan="$mem_chan"
+check_radio_mem $mem_chan
+# Save current memory channel so can restore on exit
+get_vfo_freq
 echo "Current Chan: $save_mem_chan, name: $chan_name, chan freq: $chan_freq, Frequency: $freq"
+
+# Make sure radio is in VFO mode
+set_vfo_mode
 
 # Iterate each line of the RMS Proximity file
 
@@ -337,58 +496,28 @@ while read fileline ; do
     freq_name="unknown"
     connect_status="n/a"
 
-    while read freqlist ; do
-        chan_status="Err"
-        # Get frequency  from csv programming file
-        listfreq=$(cut -d',' -f3 <<< $freqlist)
 
-        # Get rid of decimal
-        lstf1=${listfreq/./}
-        # Pad with trailing spaces to 9 characters
-        lstf1=$(printf "%-0.9s" "${lstf1}000000000")
-        # Compare frequency in csv file to frequency from Winlink Proximity file
-        if [ "$wl_freq" == "$lstf1" ] ; then
-            # Get Radio index from csv file
-            radio_index=$(cut -d',' -f1 <<< $freqlist)
-            # Get Alpha-numeric name from csv file
-            freq_name=$(cut -d',' -f2 <<< $freqlist)
-
-            # Verify with radio
-            check_radio $radio_index
-            # Get rid of decimal in frequency
-            radfreq=${chan_freq/./}
-            # Pad with trailing spaces to 9 characters
-            radfreq=$(printf "%-0.9s" "${radfreq}000000000")
-            # Compare frequency from radio memory channel to frequency from Winlink Proximity file
-            if [ "$radfreq" == "$wl_freq" ] ; then
-                chan_status="OK"
-            else
-                chan_status="Err"
-                radio_index="   "
-            fi
-
-#            echo "$freq_name: $listfreq ($lstf1) ($wl_freq) "
-            # break on match of csv file & Winlink Proximity file
-            break;
-        fi
-
-    done < $DIGI_FREQ_LIST
+# Set frequency
+# Confirm frequency is set
 
     # Qualify stations found
     if [ "$distance" != 0 ] && (
     ( (( "$wl_freq" >= 144000000 )) && (( "$wl_freq" < 148000000 )) ) ||
     ( (( "$wl_freq" >= 420000000 )) && (( "$wl_freq" < 450000000 )) ) ); then
+        chan_status="OK"
+        gateway_count=$((gateway_count + 1))
 
-        if [ "$chan_status" == "OK" ] ; then
-            gateway_count=$((gateway_count + 1))
-
-            check_gateway $radio_index "$gw_name"
-            if [ "$?" -eq 0 ] ; then
-                connect_count=$((connect_count + 1))
-            fi
+        # Try to connect with RMS Gateway
+        check_gateway $wl_freq "$gw_name"
+        if [ "$?" -eq 0 ] ; then
+            connect_count=$((connect_count + 1))
+        else
+            echo
+            echo "Call to wl2kax25 timed out"
+            echo
         fi
-        # Debug only: quit or pause after 4 attempts
-        if (( gateway_count > 25 )) ; then
+        # Debug only: quit or pause after some attempts
+        if (( gateway_count > 5 )) ; then
             break;
         fi
     else
@@ -399,8 +528,11 @@ while read fileline ; do
     printf "%-10s  %s\t%2s\t%s\t%4s   %6s\t%4s\n"  "$gw_name" "$wl_freq" "$distance" "$freq_name" "$radio_index" "$chan_status" "$connect_status"
 
 done < $RMS_PROXIMITY_FILE_OUT
+
 echo
 echo "Found $gateway_count RMS Gateways, connected: $connect_count"
 echo
-# Set radio back to APRS10
+# Set radio back to previous memory channel
+set_memchan_mode
+echo "Setting radio back to original memory channel $save_mem_chan"
 rigctl -r $SERIAL_DEVICE -m $RADIO_MODEL_ID E $save_mem_chan
