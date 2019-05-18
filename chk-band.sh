@@ -29,7 +29,6 @@ function set_memchan_mode() {
     rigctl -r /dev/ttyUSB0  -m234  V MEM
 }
 
-# =
 # ===== function get_mem
 
 # Return memory channel index that radio is using
@@ -48,27 +47,43 @@ function get_mem() {
     return $ret_code
 }
 
-# ===== function switch_bands
-function switch_bands() {
-
-    vfo_mode=$(rigctl -r /dev/ttyUSB0 -m234 v)
-    if [ "$vfo_mode" == "MEM" ] ; then
-        echo "Set VFO radio band to 2M"
-        # Fix this
-        rigctl -r /dev/ttyUSB0 -m234 E 35
-        debug_check "2M"
-    fi
-    set_vfo_mode
-#
-}
-
 # ===== function debug_check
 function debug_check() {
 
     strarg="$1"
     freq=$(rigctl -r $SERIAL_DEVICE  -m234 f)
     xcurr_freq=$(rigctl -r /dev/ttyUSB0  -m234 --vfo f $DATBND)
-    echo "debug_check: Current frequency: $strarg VFOA: $xcurr_freq, freq: $freq"
+    echo "debug_check: $strarg: Current frequency: VFOA: $xcurr_freq, freq: $freq"
+}
+
+# ===== function switch_bands
+# Arg1: 2=2M band, 4=440 band
+
+function switch_bands() {
+
+    switb="$1"
+    memchan=131
+    echo "Switching bands to: $switb"
+
+    if [ "$switb" -eq 2 ] ; then
+        memchan=35
+    fi
+
+    vfo_mode=$(rigctl -r /dev/ttyUSB0 -m234 v)
+    if [ "$vfo_mode" != "MEM" ] ; then
+        set_memchan_mode
+    fi
+
+
+    echo "Set VFO radio band to $switb, with mem chan: $memchan"
+    # Fix this
+    rigctl -r /dev/ttyUSB0 -m234 E $memchan
+    # Verify frequency has been set
+    read_freq=$(rigctl -r $SERIAL_DEVICE  -m234 f)
+    echo "Memchan verify: $memchan: freq: $read_freq"
+
+    debug_check "$memchan "
+#    set_vfo_mode
 }
 
 
@@ -128,7 +143,38 @@ function check_gateway() {
 
 # ===== main
 
+b_2MBand=true
+s_band=2
+set_freq=145090000
+
+curr_freq=$(rigctl -r $SERIAL_DEVICE -m234 f)
+
+if (( "$curr_freq" >= 144000000 )) && (( "$curr_freq" < 148000000 )) ; then
+    b_2MBand=true
+    s_band=4
+    set_freq=440950000
+fi
+
 get_mem
-debug_check
-switch_bands
+set_memchan_mode
+debug_check "Main 1"
+
+switch_bands $s_band
 get_mem
+
+# Set new frequency
+set_vfo_mode
+vfo_mode=$(rigctl -r /dev/ttyUSB0 -m234 v)
+echo "Setting frequency in $vfo_mode"
+rigctl -r /dev/ttyUSB0 -m234 F $set_freq
+
+# Verify frequency has been set
+read_freq=$(rigctl -r $SERIAL_DEVICE  -m234 f)
+echo "Read frequency: $read_freq, Set frequency $set_freq"
+
+if [ "$read_freq" -ne "$set_freq" ] ; then
+    echo "Failed to set frequency: $set_freq"
+    debug_check "Fail "
+else
+    dbgecho "Frequency $read_freq set OK"
+fi
