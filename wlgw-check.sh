@@ -9,6 +9,8 @@
 #
 # Uncomment this statement for debug echos
 # DEBUG=1
+# Used by rmslist.sh to set gateway distance from specified grid square
+GWDIST=35
 # Does not refresh RMS list if true
 b_dev=false
 
@@ -21,12 +23,14 @@ scriptname="`basename $0`"
 TMPDIR="$HOME/tmp"
 GATEWAY_LOGFILE="$TMPDIR/gateway.log"
 
-# Serial device that PG-5G cable is plugged into
+# Serial device that Kenwood PG-5G cable is plugged into
 SERIAL_DEVICE="/dev/ttyUSB0"
 # Choose which radio left (VFOA) or right (VFOB) is DATA Radio
 DATBND="VFOA"
 
 # Radio model number used by HamLib
+# Radio Model Number 234 specifies a Kenwood D710 which nearly works for a
+#  Kenwood TM-V71a
 RADIO_MODEL_ID=234
 
 DIGI_FREQ_LIST="freqlist_digi.txt"
@@ -59,8 +63,8 @@ function dev_setup() {
 #    cp -u rmslist.sh ~/bin
 }
 
-
 # ===== function usage
+
 function usage() {
    echo "Usage: $scriptname [-g <gridsquare>][-v][-h]" >&2
    echo " If no gps is found, gridsquare must be entered."
@@ -71,9 +75,9 @@ function usage() {
    echo
 }
 
-
 # ===== function in_path
 # arg: program name
+
 function in_path() {
 
     program_name="$1"
@@ -134,6 +138,8 @@ function get_lat_lon_nmeasentence() {
 }
 
 # ===== get_location
+# Get lat/lon location from gps
+
 function get_location() {
 
     # Check if program to get lat/lon info is installed.
@@ -152,6 +158,7 @@ function get_location() {
 }
 
 # ===== function debug_check
+
 function debug_check() {
 
     if [ ! -z "$DEBUG" ] ; then
@@ -163,6 +170,7 @@ function debug_check() {
 }
 
 # ===== function set_vfo_mode
+
 function set_vfo_mode() {
 
     ret_code=1
@@ -193,6 +201,7 @@ function set_vfo_mode() {
 }
 
 # ===== function set_memchan_mode
+
 function set_memchan_mode() {
     dbgecho "Set vfo mode to MEM"
     memchanmode=$(rigctl -r /dev/ttyUSB0  -m234  V MEM)
@@ -205,6 +214,7 @@ function set_memchan_mode() {
 }
 
 # ===== function set_memchan_index
+
 # Arg1: index of memory channel to set
 function set_memchan_index() {
 
@@ -239,7 +249,7 @@ function set_memchan_index() {
 }
 
 # ===== function get_ext_data_band
-
+#
 # Could return any of the following: (see tmd710.c)
 #   TMD710_EXT_DATA_BAND_A 0
 #   TMD710_EXT_DATA_BAND_B 1
@@ -252,8 +262,8 @@ function get_ext_data_band() {
 }
 
 # ===== function find_mem_chan
-# Sets 'radio_index'  memory channel index number for a given frequency
-# Arg1: frequency
+# Sets 'radio_index', memory channel index number for a given frequency
+# Arg1: frequency in Hz
 
 function find_mem_chan() {
 
@@ -302,7 +312,7 @@ function find_mem_chan() {
 }
 
 # ===== function get_mem
-
+#
 # Return memory channel index that radio is using
 # Need to set vfo to DATBND usually VFOA or VFOB
 
@@ -320,9 +330,10 @@ function get_mem() {
 }
 
 # ===== function get_chan
-
+#
 # Arg 1: memory channel number integer
 # Return information programmed into memory channel
+
 function get_chan() {
 
 #    dbgecho "get_chan: arg: $1"
@@ -332,8 +343,9 @@ function get_chan() {
 }
 
 # ===== function get_vfo_freq
-
+#
 # Return frequency that radio is using on the DATA BAND
+
 function get_vfo_freq() {
 
     freq=$(rigctl -r $SERIAL_DEVICE -m $RADIO_MODEL_ID --vfo f $DATBND)
@@ -342,6 +354,7 @@ function get_vfo_freq() {
 }
 
 # ===== function check_radio_band
+
 function check_radio_band() {
 
 vfo_mode=$(rigctl -r /dev/ttyUSB0 -m234 v)
@@ -361,6 +374,7 @@ rigctl -r $SERIAL_DEVICE -m $RADIO_MODEL_ID E 131
 rigctl -r /dev/ttyUSB0 -m234 F 440125000
 
 }
+
 # ===== function check_radio_mem
 # arg1: radio memory index
 
@@ -459,7 +473,9 @@ function check_gateway() {
      return $connect_status
 }
 
+#
 # ==== main
+#
 
 # Temporary to put programs in local bin dir
 dev_setup
@@ -560,7 +576,7 @@ if ! $b_dev ; then
     echo
     # Assume rmslist.sh installed to ~/bin
     # rmsglist arg1=distance in miles, arg2=grid square
-    rmslist.sh 40 $gridsquare -
+    rmslist.sh $GWDIST $gridsquare -
 fi
 
 # Get which Radio is designated digital
@@ -688,7 +704,7 @@ et=$((SECONDS-start_sec))
 echo
 echo "Finish: $(date "+%Y %m %d %T %Z"): Elapsed time: $(((et % 3600)/60)) min, $((et % 60)) secs,  Found $gateway_count RMS Gateways, connected: $connect_count"  | tee -a $GATEWAY_LOGFILE
 echo
-# Set radio back to previous memory channel
+# Set radio back to original memory channel
 set_memchan_mode
 echo "Setting radio back to original memory channel $save_mem_chan"
 rigctl -r $SERIAL_DEVICE -m $RADIO_MODEL_ID E $save_mem_chan
