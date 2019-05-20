@@ -12,7 +12,7 @@
 # Used by rmslist.sh to set gateway distance from specified grid square
 GWDIST=35
 # Does not refresh RMS list if true
-b_dev=false
+b_refresh_gwlist=true
 
 # Set to true for activating paclink-unix
 # Set to false to test rig control, with no connect
@@ -21,6 +21,7 @@ b_test_connect=true
 
 scriptname="`basename $0`"
 TMPDIR="$HOME/tmp"
+BINDIR="$HOME/bin"
 GATEWAY_LOGFILE="$TMPDIR/gateway.log"
 
 # Serial device that Kenwood PG-5G cable is plugged into
@@ -33,8 +34,7 @@ DATBND="VFOA"
 #  Kenwood TM-V71a
 RADIO_MODEL_ID=234
 
-DIGI_FREQ_LIST="freqlist_digi.txt"
-TMPDIR="$HOME/tmp"
+DIGI_FREQ_LIST="$BINDIR/freqlist_digi.txt"
 RMS_PROXIMITY_FILE_OUT="$TMPDIR/rmsgwprox.txt"
 
 BAND_2M_LO_LIM=144000000
@@ -350,7 +350,9 @@ function get_vfo_freq() {
 
     freq=$(rigctl -r $SERIAL_DEVICE -m $RADIO_MODEL_ID --vfo f $DATBND)
     ret_code=$?
-    dbgecho "get_vfo_freq: Ret code=$ret_code"
+    if [ $ret_code -ne 0 ] ; then
+        echo "get_vfo_freq: ERROR: ret code=$ret_code, ret string: $freq"
+    fi
 }
 
 # ===== function check_radio_band
@@ -478,7 +480,7 @@ function check_gateway() {
 #
 
 # Temporary to put programs in local bin dir
-dev_setup
+# dev_setup
 
 # This script uses these programs
 # It also uses gpsd but only if it is installed
@@ -509,6 +511,10 @@ while [[ $# -gt 0 ]] ; do
       -d|--debug)
          DEBUG=1
          echo "Set debug flag"
+         ;;
+      -r|--norefresh)
+         b_refresh_gwlist=false
+         echo "Use the existing RMS Gateway list"
          ;;
       -t|--test)
          b_test_connect=false
@@ -570,13 +576,13 @@ fi
 dbgecho "Using grid square: $gridsquare"
 
 # For DEV do not refresh the rmslist output file
-if ! $b_dev ; then
+if $b_refresh_gwlist ; then
     echo
     echo "Refreshing RMS List"
     echo
     # Assume rmslist.sh installed to ~/bin
     # rmsglist arg1=distance in miles, arg2=grid square
-    rmslist.sh $GWDIST $gridsquare -
+    $BINDIR/rmslist.sh $GWDIST $gridsquare S
 fi
 
 # Get which Radio is designated digital
@@ -605,7 +611,9 @@ fi
 
 # Set radio to the DATA radio
 # So this command will set which radio in the TM-V71 is default radio
-rigctl  -r /dev/ttyUSB0 -m234  --vfo f $DATBND
+# Returns which frequency VFOx is set to
+
+datbnd_freq=$(rigctl  -r /dev/ttyUSB0 -m234  --vfo f $DATBND)
 
 # Assign some variables
 
