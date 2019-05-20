@@ -8,8 +8,15 @@
 #  - generated RMS Gateway list from Winlink Web Services
 #
 # Uncomment this statement for debug echos
-DEBUG=1
-b_dev=true
+# DEBUG=1
+# Does not refresh RMS list if true
+b_dev=false
+
+# Set to true for activating paclink-unix
+# Set to false to test rig control, with no connect
+# Set by -t command line arg
+b_test_connect=true
+
 scriptname="`basename $0`"
 TMPDIR="$HOME/tmp"
 GATEWAY_LOGFILE="$TMPDIR/gateway.log"
@@ -42,17 +49,25 @@ function dbgecho { if [ ! -z "$DEBUG" ] ; then echo "$*"; fi }
 # For development only copy required programs to local bin
 
 function dev_setup() {
-    cp -u latlon2grid ~/bin
-    cp -u rmslist.sh ~/bin
+
+    if [ ! -e "$(pwd)/gridsq/latlon2grid" ] ; then
+        pushd gridsq > /dev/null
+        make
+        popd > /dev/null
+    fi
+    cp -u gridsq/latlon2grid ~/bin
+#    cp -u rmslist.sh ~/bin
 }
 
 
 # ===== function usage
 function usage() {
    echo "Usage: $scriptname [-g <gridsquare>][-v][-h]" >&2
+   echo " If no gps is found, gridsquare must be entered."
    echo "   -g <gridsquare> | --gridsquare"
-   echo "   -v | --verbose   display verbose messages"
-   echo "   -h | --help      display this message"
+   echo "   -d | --debug   display debug messages"
+   echo "   -t | --test    test rig ctrl with NO connect"
+   echo "   -h | --help    display this message"
    echo
 }
 
@@ -139,22 +154,88 @@ function get_location() {
 # ===== function debug_check
 function debug_check() {
 
-    strarg="$1"
-    freq=$(rigctl -r /dev/ttyUSB0  -m234 f)
-    xcurr_freq=$(rigctl -r /dev/ttyUSB0  -m234 --vfo f $DATBND)
-    echo "debug_check: $strarg: Current frequency: VFOA: $xcurr_freq, freq: $freq"
+    if [ ! -z "$DEBUG" ] ; then
+        strarg="$1"
+        freq=$(rigctl -r /dev/ttyUSB0  -m234 f)
+        xcurr_freq=$(rigctl -r /dev/ttyUSB0  -m234 --vfo f $DATBND)
+        echo "debug_check: $strarg: Current frequency: VFOA: $xcurr_freq, freq: $freq"
+    fi
 }
 
 # ===== function set_vfo_mode
 function set_vfo_mode() {
-#    dbgecho "Set vfo mode to $DATBND"
-    rigctl -r /dev/ttyUSB0  -m234  V $DATBND
+
+    ret_code=1
+    to_secs=$SECONDS
+    b_found_error=false
+
+    while [ $ret_code -gt 0 ] && [ $((SECONDS-to_secs)) -lt 5 ] ; do
+
+        vfomode=$(rigctl -r /dev/ttyUSB0  -m234  V $DATBND)
+        returncode=$?
+        if [ ! -z "$vfomode" ] ; then
+            ret_code=1
+            vfomode_read=$(rigctl -r /dev/ttyUSB0  -m234 v)
+            errorvfomode=$vfomode
+            errorcode=$returncode
+            to_time=$((SECONDS-to_secs))
+            b_found_error=true
+
+        else
+            ret_code=0
+        fi
+    done
+    if $b_found_error ; then
+        echo "RIG CTRL ERROR[$errorcode]: to: $to_time,  VFO mode=$vfomode_read, error:$errorvfomode" | tee -a $GATEWAY_LOGFILE
+    fi
+
+    return $ret_code
 }
 
 # ===== function set_memchan_mode
 function set_memchan_mode() {
     dbgecho "Set vfo mode to MEM"
-    rigctl -r /dev/ttyUSB0  -m234  V MEM
+    memchanmode=$(rigctl -r /dev/ttyUSB0  -m234  V MEM)
+    if [ ! -z "$memchanmode" ] ; then
+        vfomode_read=$(rigctl -r /dev/ttyUSB0  -m234 v)
+        echo "RIG CTRL ERROR: MEM mode=$vfomode_read, error:$memchanmode" | tee -a $GATEWAY_LOGFILE
+        # DEBUG temporary
+        exit 1
+    fi
+}
+
+# ===== function set_memchan_index
+# Arg1: index of memory channel to set
+function set_memchan_index() {
+
+    mem_index=$1
+    ret_code=1
+    to_secs=$SECONDS
+    b_found_error=false
+
+    while [ $ret_code -gt 0 ] && [ $((SECONDS-to_secs)) -lt 5 ] ; do
+
+        set_mem_ret=$(rigctl -r /dev/ttyUSB0 -m234 E $mem_index)
+        returncode=$?
+        # if any string returned then usually an error
+        if [ ! -z "$set_mem_ret" ] ; then
+            grep -i "error = Feature"  <<< "$set_mem_ret" > /dev/null 2>&1
+            if [ $? -eq 0 ] ; then
+                ret_code=1
+                errorcode=$returncode
+                err_mem_ret=$set_mem_ret
+                to_time=$((SECONDS-to_secs))
+                b_found_error=true
+            fi
+        else
+            ret_code=0
+        fi
+    done
+    if $b_found_error ; then
+        echo "RIG CTRL ERROR[$errorcode]: to: $to_time, setting memory index $mem_index: $err_mem_ret"  | tee -a $GATEWAY_LOGFILE
+    fi
+
+    return $ret_code
 }
 
 # ===== function get_ext_data_band
@@ -307,7 +388,7 @@ function check_radio_mem() {
 }
 
 #===== function check_gateway
-# arg1: readio memory index
+# arg1: radio memory index
 # Set 2M frequencies with VFO & 440 frequencies with memory index
 
 function check_gateway() {
@@ -323,15 +404,28 @@ function check_gateway() {
         b_2MBand=true
         vfo_mode=$(rigctl -r /dev/ttyUSB0 -m234 v)
         if [ "$vfo_mode" == "MEM" ] ; then
-            echo "Set VFO radio band to 2M"
-            # Fix this
-            rigctl -r /dev/ttyUSB0 -m234 E 35
-            debug_check "2M"
+            echo "  Set VFO radio band to 2M"
+            # Set memory channel index
+            set_memchan_index 35
+
+            debug_check "Change to 2M band"
+            # Now set VFO mode
+            set_vfo_mode
         fi
-        set_vfo_mode
-# This errors out
-#       rigctl -r $SERIAL_DEVICE -m $RADIO_MODEL_ID --vfo F $gw_freq $DATBND
-        rigctl -r $SERIAL_DEVICE -m $RADIO_MODEL_ID F $gw_freq
+
+        # This errors out
+        # rigctl -r $SERIAL_DEVICE -m $RADIO_MODEL_ID --vfo F $gw_freq $DATBND
+        #
+        # Set Gateway frequency
+        #
+        set_freq_ret=$(rigctl -r $SERIAL_DEVICE -m $RADIO_MODEL_ID F $gw_freq)
+        if [ ! -z "$set_freq_ret" ] ; then
+            vfomode_read=$(rigctl -r /dev/ttyUSB0  -m234 v)
+            echo "ERROR: set freq: mode=$vfomode_read,  error:$set_freq_ret" | tee -a $GATEWAY_LOGFILE
+        fi
+
+        # The following just sets freq_name & radio index for log file
+        find_mem_chan $gw_freq
     else
         # Set 440 frequencies with a memory index
         set_memchan_mode
@@ -348,16 +442,17 @@ function check_gateway() {
     read_freq=$(rigctl -r $SERIAL_DEVICE  -m234 f)
 
     if [ "$read_freq" -ne "$gw_freq" ] ; then
-        echo "Failed to set frequency: $gw_freq for Gateway: $gw_call"
+        echo "Failed to set frequency: $gw_freq for Gateway: $gw_call, read freq: $read_freq" | tee -a $GATEWAY_LOGFILE
         return $connect_status
     else
         dbgecho "Frequency $read_freq set OK"
     fi
 
-    if [ 1 -eq 1 ] ; then
-    # Connect with paclink-unix
-     wl2kax25 -c "$gw_call"
-     connect_status="$?"
+    if $b_test_connect ; then
+        # Connect with paclink-unix
+        dbgecho "Waiting for wl2kax25 to return ..."
+        wl2kax25 -c "$gw_call"
+        connect_status="$?"
     else
         connect_status=0
     fi
@@ -370,7 +465,8 @@ function check_gateway() {
 dev_setup
 
 # This script uses these programs
-PROGRAM_LIST="rigctl gpsd latlon2grid rmslist.sh"
+# It also uses gpsd but only if it is installed
+PROGRAM_LIST="rigctl latlon2grid rmslist.sh"
 b_exitnow=false
 for progname in $PROGRAM_LIST ; do
     in_path "$progname"
@@ -394,8 +490,13 @@ while [[ $# -gt 0 ]] ; do
 	 gridsquare="$2"
          shift # past argumnet
 	 ;;
-      -v|--verbose)
-         verbose=true
+      -d|--debug)
+         DEBUG=1
+         echo "Set debug flag"
+         ;;
+      -t|--test)
+         b_test_connect=false
+         echo "Set test rig control only flag"
          ;;
       -h|--help)
          usage
@@ -410,17 +511,46 @@ while [[ $# -gt 0 ]] ; do
 shift # past argument or value
 done
 
-# Was gridsquare set from command line?
-if [ -z "$gridsquare" ] ; then
-    # Determine Grid Square location from gps
-    get_location
-    echo "We are here: lat: $lat$latdir, lon: $lon$londir"
+# Determine if gpsd is installed
+prog_name="gpsd"
+type -P $prog_name  >/dev/null 2>&1
+if [ "$?"  -ne 0 ]; then
+    # gpsd not installed
+    # Was gridsquare set from command line?
+    if [ -z "$gridsquare" ] ; then
+        # No gpsd & not specified on command line
+        # Prompt for gridsquare
 
-    # Assume latlon2grid installed to ~/bin
-    # Arguments need to be in decimal degrees ie:
-    #  48.48447 -122.901885
-    gridsquare=$(latlon2grid $lat $lon)
+        read -t 1 -n 10000 discard
+        echo -n "Enter grid square eg; CN88nl, followed by [enter]"
+        # -p display PROMPT without a trailing new line
+        # -e readline is used to obtain the line
+        read -ep ": " gridsquare
+    fi
+else
+    dbgecho "Found $prog_name"
+    # Was gridsquare set from command line?
+    if [ -z "$gridsquare" ] ; then
+        # Determine Grid Square location from gps
+        get_location
+        echo "We are here: lat: $lat$latdir, lon: $lon$londir"
+
+        # Assume latlon2grid installed to ~/bin
+        # Arguments need to be in decimal degrees ie:
+        #  48.48447 -122.901885
+        gridsquare=$(latlon2grid $lat $lon)
+    fi
 fi
+
+# Should qualify gridsqare AANNAA
+sizegridsqstr=${#gridsquare}
+
+if (( sizegridsqstr != 6 )) ; then
+    echo
+    echo "INVALID grid square: $gridsquare, length = $sizegridsqstr"
+    exit 1
+fi
+
 dbgecho "Using grid square: $gridsquare"
 
 # For DEV do not refresh the rmslist output file
@@ -476,11 +606,16 @@ set_vfo_mode
 
 # Iterate each line of the RMS Proximity file
 
+total_gw_count=0
 gateway_count=0
 connect_count=0
+start_sec=$SECONDS
 
+echo | tee -a $GATEWAY_LOGFILE
 echo "Start: $(date "+%Y %m %d %T %Z"):" | tee -a $GATEWAY_LOGFILE
-printf "\nRMS GW\t    Freq\tDist\tName\tIndex  ChanStat  ConnStat Time\n" | tee -a $GATEWAY_LOGFILE
+# Table header is 2 lines
+printf  "\n\t\t\t\t\t\tChan\tConn\n" | tee -a $GATEWAY_LOGFILE
+printf "RMS GW\t    Freq\tDist\tName\tIndex\tStat\tStat\tTime\n" | tee -a $GATEWAY_LOGFILE
 
 while read fileline ; do
 
@@ -497,10 +632,10 @@ while read fileline ; do
         echo "Warning: Frequency violates Line A"
     fi
 
+    next_sec=$SECONDS
     freq_name="unknown"
     connect_status="n/a"
-
-
+    total_gw_count=$((total_gw_count + 1))
 # Set frequency
 # Confirm frequency is set
 
@@ -508,7 +643,7 @@ while read fileline ; do
     if [ "$distance" != 0 ] && (
     ( (( "$wl_freq" >= 144000000 )) && (( "$wl_freq" < 148000000 )) ) ||
     ( (( "$wl_freq" >= 420000000 )) && (( "$wl_freq" < 450000000 )) ) ); then
-        start_sec=$SECONDS
+
         chan_status="OK"
         gateway_count=$((gateway_count + 1))
 
@@ -525,23 +660,33 @@ while read fileline ; do
         fi
     else
 #        dbgecho "Changing channel status to 'Unqaul' for freq: $wl_freq & gateway $gw_name"
+        find_mem_chan $wl_freq
         chan_status="Unqual"
     fi
 
-    printf "%-10s  %s\t%2s\t%s\t%4s   %6s\t%4s\t%d\n"  "$gw_name" "$wl_freq" "$distance" "$freq_name" "$radio_index" "$chan_status" "$connect_status" $((SECONDS-start_sec)) | tee -a $GATEWAY_LOGFILE
+    # Variables set from csv programming file
+    # freq_name, radio_index
+    printf "%-10s  %s\t%2s\t%s\t%4s   %6s\t%4s\t  %d\n"  "$gw_name" "$wl_freq" "$distance" "$freq_name" "$radio_index" "$chan_status" "$connect_status" $((SECONDS-next_sec)) | tee -a $GATEWAY_LOGFILE
 
     # Debug only: quit or pause after some attempts
-    echo "Modulo 5 $((gateway_count/5))"
-    if [ 1 -eq 0 ] ; then
-        if (( gateway_count > 5 )) ; then
-            echo "Sleeping for 5 min"
-            sleep 5m
-        fi
+    if [ $((gateway_count % 5)) -eq 0 ] && [ $total_gw_count -gt 5 ] ; then
+        echo "  Pause for a bit, gateway count: $gateway_count, modulo 5 $(( gateway_count % 5 ))"
+        sleep 2
     fi
+
+    if (( $total_gw_count > 50 )) ; then
+        echo "DEBUG: exit"
+        break;
+    else
+        dbgecho "gateway_count: $total_gw_count"
+    fi
+
 done < $RMS_PROXIMITY_FILE_OUT
 
+# Get elapsed time in seconds
+et=$((SECONDS-start_sec))
 echo
-echo "Finish: echo "$(date "+%Y %m %d %T %Z"): Found $gateway_count RMS Gateways, connected: $connect_count"  | tee -a $GATEWAY_LOGFILE
+echo "Finish: $(date "+%Y %m %d %T %Z"): Elapsed time: $(((et % 3600)/60)) min, $((et % 60)) secs,  Found $gateway_count RMS Gateways, connected: $connect_count"  | tee -a $GATEWAY_LOGFILE
 echo
 # Set radio back to previous memory channel
 set_memchan_mode
