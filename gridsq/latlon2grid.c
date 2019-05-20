@@ -71,6 +71,7 @@ int main(int argc, char *argv[])
 
         calcLocator(dst, latf, lonf);
         printf("%s\n", dst);
+        exit 0
 }
 
 
