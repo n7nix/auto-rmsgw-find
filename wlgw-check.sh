@@ -9,20 +9,23 @@
 #
 # Uncomment this statement for debug echos
 # DEBUG=1
+
 # Used by rmslist.sh to set gateway distance from specified grid square
 GWDIST=35
-# Does not refresh RMS list if true
+# Will refresh RMS list if true
 b_refresh_gwlist=true
 
 # Set to true for activating paclink-unix
 # Set to false to test rig control, with no connect
 # Set by -t command line arg
 b_test_connect=true
+b_crontab=false
 
 scriptname="`basename $0`"
 TMPDIR="$HOME/tmp"
 BINDIR="$HOME/bin"
 GATEWAY_LOGFILE="$TMPDIR/gateway.log"
+RIGCTL="/usr/local/bin/rigctl"
 
 # Serial device that Kenwood PG-5G cable is plugged into
 SERIAL_DEVICE="/dev/ttyUSB0"
@@ -163,8 +166,8 @@ function debug_check() {
 
     if [ ! -z "$DEBUG" ] ; then
         strarg="$1"
-        freq=$(rigctl -r /dev/ttyUSB0  -m234 f)
-        xcurr_freq=$(rigctl -r /dev/ttyUSB0  -m234 --vfo f $DATBND)
+        freq=$($RIGCTL -r /dev/ttyUSB0  -m234 f)
+        xcurr_freq=$($RIGCTL -r /dev/ttyUSB0  -m234 --vfo f $DATBND)
         echo "debug_check: $strarg: Current frequency: VFOA: $xcurr_freq, freq: $freq"
     fi
 }
@@ -179,11 +182,11 @@ function set_vfo_mode() {
 
     while [ $ret_code -gt 0 ] && [ $((SECONDS-to_secs)) -lt 5 ] ; do
 
-        vfomode=$(rigctl -r /dev/ttyUSB0  -m234  V $DATBND)
+        vfomode=$($RIGCTL -r /dev/ttyUSB0  -m234  V $DATBND)
         returncode=$?
         if [ ! -z "$vfomode" ] ; then
             ret_code=1
-            vfomode_read=$(rigctl -r /dev/ttyUSB0  -m234 v)
+            vfomode_read=$($RIGCTL -r /dev/ttyUSB0  -m234 v)
             errorvfomode=$vfomode
             errorcode=$returncode
             to_time=$((SECONDS-to_secs))
@@ -204,9 +207,9 @@ function set_vfo_mode() {
 
 function set_memchan_mode() {
     dbgecho "Set vfo mode to MEM"
-    memchanmode=$(rigctl -r /dev/ttyUSB0  -m234  V MEM)
+    memchanmode=$($RIGCTL -r /dev/ttyUSB0  -m234  V MEM)
     if [ ! -z "$memchanmode" ] ; then
-        vfomode_read=$(rigctl -r /dev/ttyUSB0  -m234 v)
+        vfomode_read=$($RIGCTL -r /dev/ttyUSB0  -m234 v)
         echo "RIG CTRL ERROR: MEM mode=$vfomode_read, error:$memchanmode" | tee -a $GATEWAY_LOGFILE
         # DEBUG temporary
         exit 1
@@ -225,7 +228,7 @@ function set_memchan_index() {
 
     while [ $ret_code -gt 0 ] && [ $((SECONDS-to_secs)) -lt 5 ] ; do
 
-        set_mem_ret=$(rigctl -r /dev/ttyUSB0 -m234 E $mem_index)
+        set_mem_ret=$($RIGCTL -r /dev/ttyUSB0 -m234 E $mem_index)
         returncode=$?
         # if any string returned then usually an error
         if [ ! -z "$set_mem_ret" ] ; then
@@ -257,7 +260,7 @@ function set_memchan_index() {
 #   TMD710_EXT_DATA_BAND_TXB_RXA 3
 
 function get_ext_data_band() {
-    ret_code=$(rigctl -r /dev/ttyUSB0  -m234  l EXTDATABAND)
+    ret_code=$($RIGCTL -r /dev/ttyUSB0  -m234  l EXTDATABAND)
     return $ret_code
 }
 
@@ -318,7 +321,7 @@ function find_mem_chan() {
 
 function get_mem() {
 
-    mem_chan=$(rigctl -r $SERIAL_DEVICE -m $RADIO_MODEL_ID e)
+    mem_chan=$($RIGCTL -r $SERIAL_DEVICE -m $RADIO_MODEL_ID e)
     grep -i "error" <<< $mem_chan > /dev/null 2>&1
     retcode=$?
     if [ $retcode -eq 0 ] ; then
@@ -337,7 +340,7 @@ function get_mem() {
 function get_chan() {
 
 #    dbgecho "get_chan: arg: $1"
-    chan_info=$(rigctl -r $SERIAL_DEVICE -m $RADIO_MODEL_ID  h $1)
+    chan_info=$($RIGCTL -r $SERIAL_DEVICE -m $RADIO_MODEL_ID  h $1)
     ret_code=$?
 #    echo "Ret code=$ret_code"
 }
@@ -348,7 +351,7 @@ function get_chan() {
 
 function get_vfo_freq() {
 
-    freq=$(rigctl -r $SERIAL_DEVICE -m $RADIO_MODEL_ID --vfo f $DATBND)
+    freq=$($RIGCTL -r $SERIAL_DEVICE -m $RADIO_MODEL_ID --vfo f $DATBND)
     ret_code=$?
     if [ $ret_code -ne 0 ] ; then
         echo "get_vfo_freq: ERROR: ret code=$ret_code, ret string: $freq"
@@ -359,11 +362,11 @@ function get_vfo_freq() {
 
 function check_radio_band() {
 
-vfo_mode=$(rigctl -r /dev/ttyUSB0 -m234 v)
+vfo_mode=$($RIGCTL -r /dev/ttyUSB0 -m234 v)
 if ["$vfo_mode" -ne "MEM" ] ; then
-    rigctl -r /dev/ttyUSB0 -m234 V MEM
+    $RIGCTL -r /dev/ttyUSB0 -m234 V MEM
 fi
-curr_freq=$(rigctl -r /dev/ttyUSB0 -m234 f)
+curr_freq=$($RIGCTL -r /dev/ttyUSB0 -m234 f)
 
 b_2MBand=false
 if (( "$curr_freq" >= 144000000 )) && (( "$curr_freq" < 148000000 )) ; then
@@ -371,9 +374,9 @@ if (( "$curr_freq" >= 144000000 )) && (( "$curr_freq" < 148000000 )) ; then
 fi
 
 # Set frequency to 440125000
-rigctl -r $SERIAL_DEVICE -m $RADIO_MODEL_ID E 131
+$RIGCTL -r $SERIAL_DEVICE -m $RADIO_MODEL_ID E 131
 
-rigctl -r /dev/ttyUSB0 -m234 F 440125000
+$RIGCTL -r /dev/ttyUSB0 -m234 F 440125000
 
 }
 
@@ -418,7 +421,7 @@ function check_gateway() {
 
     if (( gw_freq >= 144000000 )) && (( gw_freq < 148000000 )) ; then
         b_2MBand=true
-        vfo_mode=$(rigctl -r /dev/ttyUSB0 -m234 v)
+        vfo_mode=$($RIGCTL -r /dev/ttyUSB0 -m234 v)
         if [ "$vfo_mode" == "MEM" ] ; then
             echo "  Set VFO radio band to 2M"
             # Set memory channel index
@@ -434,9 +437,9 @@ function check_gateway() {
         #
         # Set Gateway frequency
         #
-        set_freq_ret=$(rigctl -r $SERIAL_DEVICE -m $RADIO_MODEL_ID F $gw_freq)
+        set_freq_ret=$($RIGCTL -r $SERIAL_DEVICE -m $RADIO_MODEL_ID F $gw_freq)
         if [ ! -z "$set_freq_ret" ] ; then
-            vfomode_read=$(rigctl -r /dev/ttyUSB0  -m234 v)
+            vfomode_read=$($RIGCTL -r /dev/ttyUSB0  -m234 v)
             echo "ERROR: set freq: mode=$vfomode_read,  error:$set_freq_ret" | tee -a $GATEWAY_LOGFILE
         fi
 
@@ -450,12 +453,12 @@ function check_gateway() {
             echo "Can not set frequency $gw_freq, not in frequency list."
             return 1
         fi
-        rigctl -r $SERIAL_DEVICE -m $RADIO_MODEL_ID E $radio_index
+        $RIGCTL -r $SERIAL_DEVICE -m $RADIO_MODEL_ID E $radio_index
         debug_check "440"
     fi
 
     # Verify frequency has been set
-    read_freq=$(rigctl -r $SERIAL_DEVICE  -m234 f)
+    read_freq=$($RIGCTL -r $SERIAL_DEVICE  -m234 f)
 
     if [ "$read_freq" -ne "$gw_freq" ] ; then
         echo "Failed to set frequency: $gw_freq for Gateway: $gw_call, read freq: $read_freq" | tee -a $GATEWAY_LOGFILE
@@ -479,24 +482,39 @@ function check_gateway() {
 # ==== main
 #
 
+# Determine if script is running from a cron job
+#PID test
+# Get parent pid of parent
+PPPID=$(ps h -o ppid= $PPID)
+# get name of the command
+P_COMMAND=$(ps h -o %c $PPPID)
+
+dbgecho "PID test: cmd: $P_COMMAND"
+# Test name against cron
+if [ "$P_COMMAND" == "cron" ]; then
+    b_crontab=true
+fi
+
 # Temporary to put programs in local bin dir
 # dev_setup
 
-# This script uses these programs
-# It also uses gpsd but only if it is installed
-PROGRAM_LIST="rigctl latlon2grid rmslist.sh"
-b_exitnow=false
-for progname in $PROGRAM_LIST ; do
-    in_path "$progname"
-    retcode=$?
-#    dbgecho "Checking prog: $progname: $retcode"
-    if [ "$retcode" -ne 0 ] ; then
-        b_exitnow=true
-    fi
-done
+if ! $b_crontab ; then
+    # This script uses these programs
+    # It also uses gpsd but only if it is installed
+    PROGRAM_LIST="rigctl latlon2grid rmslist.sh"
+    b_exitnow=false
+    for progname in $PROGRAM_LIST ; do
+        in_path "$progname"
+        retcode=$?
+#       dbgecho "Checking prog: $progname: $retcode"
+        if [ "$retcode" -ne 0 ] ; then
+            b_exitnow=true
+        fi
+    done
 
-if $b_exitnow ; then
-    exit 1
+    if $b_exitnow ; then
+        exit 1
+    fi
 fi
 
 # if there are any args then parse them
@@ -560,7 +578,7 @@ else
         # Assume latlon2grid installed to ~/bin
         # Arguments need to be in decimal degrees ie:
         #  48.48447 -122.901885
-        gridsquare=$(latlon2grid $lat $lon)
+        gridsquare=$($BINDIR/latlon2grid $lat $lon)
     fi
 fi
 
@@ -613,7 +631,7 @@ fi
 # So this command will set which radio in the TM-V71 is default radio
 # Returns which frequency VFOx is set to
 
-datbnd_freq=$(rigctl  -r /dev/ttyUSB0 -m234  --vfo f $DATBND)
+datbnd_freq=$($RIGCTL  -r /dev/ttyUSB0 -m234  --vfo f $DATBND)
 
 # Assign some variables
 
@@ -636,7 +654,8 @@ connect_count=0
 start_sec=$SECONDS
 
 echo | tee -a $GATEWAY_LOGFILE
-echo "Start: $(date "+%Y %m %d %T %Z"):" | tee -a $GATEWAY_LOGFILE
+echo "Start: $(date "+%Y %m %d %T %Z"): grid: $gridsquare, debug: $DEBUG, GW list refresh: $b_refresh_gwlist, connect: $b_test_connect, cron: $b_crontab" | tee -a $GATEWAY_LOGFILE
+
 # Table header is 2 lines
 printf  "\n\t\t\t\t\t\tChan\tConn\n" | tee -a $GATEWAY_LOGFILE
 printf "RMS GW\t    Freq\tDist\tName\tIndex\tStat\tStat\tTime\n" | tee -a $GATEWAY_LOGFILE
@@ -715,4 +734,4 @@ echo
 # Set radio back to original memory channel
 set_memchan_mode
 echo "Setting radio back to original memory channel $save_mem_chan"
-rigctl -r $SERIAL_DEVICE -m $RADIO_MODEL_ID E $save_mem_chan
+$RIGCTL -r $SERIAL_DEVICE -m $RADIO_MODEL_ID E $save_mem_chan
