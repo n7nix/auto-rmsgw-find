@@ -18,3 +18,18 @@ If a gps is found the grid square location is determined from Lat & Lon co-ordin
 
 Calls paclink-unix wl2kax25 for connection evaluation.
 
+#### Install
+* Requires these files to be in local bin directory
+```
+rmslist.sh
+freqlist_digit.txt
+latlon2grid
+```
+
+#### crontab
+
+* To collect data on a regular basis running the wlgw-check.sh script 4 times a day.
+
+```
+5  */6   *   *   *  /bin/bash /home/gunn/bin/wlgw-check.sh -g CN88nl
+```
