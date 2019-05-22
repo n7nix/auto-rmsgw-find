@@ -23,9 +23,12 @@ b_crontab=false
 
 scriptname="`basename $0`"
 TMPDIR="$HOME/tmp"
-BINDIR="$HOME/bin"
 GATEWAY_LOGFILE="$TMPDIR/gateway.log"
-RIGCTL="/usr/local/bin/rigctl"
+BINDIR="$HOME/bin"
+LOCAL_BINDIR="/usr/local/bin"
+
+RIGCTL="$LOCAL_BINDIR/rigctl"
+WL2KAX25="$LOCAL_BINDIR/wl2kax25"
 
 # Serial device that Kenwood PG-5G cable is plugged into
 SERIAL_DEVICE="/dev/ttyUSB0"
@@ -166,10 +169,48 @@ function debug_check() {
 
     if [ ! -z "$DEBUG" ] ; then
         strarg="$1"
-        freq=$($RIGCTL -r /dev/ttyUSB0  -m234 f)
-        xcurr_freq=$($RIGCTL -r /dev/ttyUSB0  -m234 --vfo f $DATBND)
+        freq=$($RIGCTL -r $SERIAL_DEVICE  -m $RADIO_MODEL_ID f)
+        xcurr_freq=$($RIGCTL -r $SERIAL_DEVICE  -m $RADIO_MODEL_ID --vfo f $DATBND)
         echo "debug_check: $strarg: Current frequency: VFOA: $xcurr_freq, freq: $freq"
     fi
+}
+
+# ===== function set_vfo_freq
+# Arg1: frequency to set
+
+function set_vfo_freq() {
+
+    vfo_freq="$1"
+    ret_code=1
+    to_secs=$SECONDS
+    b_found_error=false
+
+    while [ $ret_code -gt 0 ] && [ $((SECONDS-to_secs)) -lt 5 ] ; do
+
+        # This errors out
+        # rigctl -r $SERIAL_DEVICE -m $RADIO_MODEL_ID --vfo F $gw_freq $DATBND
+
+        set_freq_ret=$($RIGCTL -r $SERIAL_DEVICE -m $RADIO_MODEL_ID F $gw_freq)
+        returncode=$?
+        if [ ! -z "$set_freq_ret" ] ; then
+            ret_code=1
+            vfomode_read=$($RIGCTL -r $SERIAL_DEVICE  -m $RADIO_MODEL_ID v)
+            errorsetfreq=$set_freq_ret
+            errorcode=$returncode
+            to_time=$((SECONDS-to_secs))
+            b_found_error=true
+
+        else
+            ret_code=0
+        fi
+     done
+
+    if $b_found_error ; then
+        vfomode_read=$($RIGCTL -r $SERIAL_DEVICE  -m $RADIO_MODEL_ID v)
+        echo "RIG CTRL ERROR[$errorcode]: set freq: $vfo_freq, TOut: $to_time, VFO mode=$vfomode_read, error:$errorsetfreq" | tee -a $GATEWAY_LOGFILE
+    fi
+
+    return $ret_code
 }
 
 # ===== function set_vfo_mode
@@ -182,11 +223,11 @@ function set_vfo_mode() {
 
     while [ $ret_code -gt 0 ] && [ $((SECONDS-to_secs)) -lt 5 ] ; do
 
-        vfomode=$($RIGCTL -r /dev/ttyUSB0  -m234  V $DATBND)
+        vfomode=$($RIGCTL -r $SERIAL_DEVICE  -m $RADIO_MODEL_ID  V $DATBND)
         returncode=$?
         if [ ! -z "$vfomode" ] ; then
             ret_code=1
-            vfomode_read=$($RIGCTL -r /dev/ttyUSB0  -m234 v)
+            vfomode_read=$($RIGCTL -r $SERIAL_DEVICE  -m $RADIO_MODEL_ID v)
             errorvfomode=$vfomode
             errorcode=$returncode
             to_time=$((SECONDS-to_secs))
@@ -196,8 +237,9 @@ function set_vfo_mode() {
             ret_code=0
         fi
     done
+
     if $b_found_error ; then
-        echo "RIG CTRL ERROR[$errorcode]: to: $to_time,  VFO mode=$vfomode_read, error:$errorvfomode" | tee -a $GATEWAY_LOGFILE
+        echo "RIG CTRL ERROR[$errorcode]: set vfo mode: TOut: $to_time, VFO mode=$vfomode_read, error:$errorvfomode" | tee -a $GATEWAY_LOGFILE
     fi
 
     return $ret_code
@@ -207,9 +249,9 @@ function set_vfo_mode() {
 
 function set_memchan_mode() {
     dbgecho "Set vfo mode to MEM"
-    memchanmode=$($RIGCTL -r /dev/ttyUSB0  -m234  V MEM)
+    memchanmode=$($RIGCTL -r $SERIAL_DEVICE  -m $RADIO_MODEL_ID  V MEM)
     if [ ! -z "$memchanmode" ] ; then
-        vfomode_read=$($RIGCTL -r /dev/ttyUSB0  -m234 v)
+        vfomode_read=$($RIGCTL -r $SERIAL_DEVICE  -m $RADIO_MODEL_ID v)
         echo "RIG CTRL ERROR: MEM mode=$vfomode_read, error:$memchanmode" | tee -a $GATEWAY_LOGFILE
         # DEBUG temporary
         exit 1
@@ -228,7 +270,7 @@ function set_memchan_index() {
 
     while [ $ret_code -gt 0 ] && [ $((SECONDS-to_secs)) -lt 5 ] ; do
 
-        set_mem_ret=$($RIGCTL -r /dev/ttyUSB0 -m234 E $mem_index)
+        set_mem_ret=$($RIGCTL -r $SERIAL_DEVICE -m $RADIO_MODEL_ID E $mem_index)
         returncode=$?
         # if any string returned then usually an error
         if [ ! -z "$set_mem_ret" ] ; then
@@ -245,7 +287,7 @@ function set_memchan_index() {
         fi
     done
     if $b_found_error ; then
-        echo "RIG CTRL ERROR[$errorcode]: to: $to_time, setting memory index $mem_index: $err_mem_ret"  | tee -a $GATEWAY_LOGFILE
+        echo "RIG CTRL ERROR[$errorcode]: set memory index: $mem_index, TOut: $to_time, error:$err_mem_ret"  | tee -a $GATEWAY_LOGFILE
     fi
 
     return $ret_code
@@ -260,7 +302,7 @@ function set_memchan_index() {
 #   TMD710_EXT_DATA_BAND_TXB_RXA 3
 
 function get_ext_data_band() {
-    ret_code=$($RIGCTL -r /dev/ttyUSB0  -m234  l EXTDATABAND)
+    ret_code=$($RIGCTL -r $SERIAL_DEVICE  -m $RADIO_MODEL_ID  l EXTDATABAND)
     return $ret_code
 }
 
@@ -362,11 +404,11 @@ function get_vfo_freq() {
 
 function check_radio_band() {
 
-vfo_mode=$($RIGCTL -r /dev/ttyUSB0 -m234 v)
+vfo_mode=$($RIGCTL -r $SERIAL_DEVICE -m $RADIO_MODEL_ID v)
 if ["$vfo_mode" -ne "MEM" ] ; then
-    $RIGCTL -r /dev/ttyUSB0 -m234 V MEM
+    $RIGCTL -r $SERIAL_DEVICE -m $RADIO_MODEL_ID V MEM
 fi
-curr_freq=$($RIGCTL -r /dev/ttyUSB0 -m234 f)
+curr_freq=$($RIGCTL -r $SERIAL_DEVICE -m $RADIO_MODEL_ID f)
 
 b_2MBand=false
 if (( "$curr_freq" >= 144000000 )) && (( "$curr_freq" < 148000000 )) ; then
@@ -376,7 +418,7 @@ fi
 # Set frequency to 440125000
 $RIGCTL -r $SERIAL_DEVICE -m $RADIO_MODEL_ID E 131
 
-$RIGCTL -r /dev/ttyUSB0 -m234 F 440125000
+$RIGCTL -r $SERIAL_DEVICE -m $RADIO_MODEL_ID F 440125000
 
 }
 
@@ -421,7 +463,7 @@ function check_gateway() {
 
     if (( gw_freq >= 144000000 )) && (( gw_freq < 148000000 )) ; then
         b_2MBand=true
-        vfo_mode=$($RIGCTL -r /dev/ttyUSB0 -m234 v)
+        vfo_mode=$($RIGCTL -r $SERIAL_DEVICE -m $RADIO_MODEL_ID v)
         if [ "$vfo_mode" == "MEM" ] ; then
             echo "  Set VFO radio band to 2M"
             # Set memory channel index
@@ -432,16 +474,8 @@ function check_gateway() {
             set_vfo_mode
         fi
 
-        # This errors out
-        # rigctl -r $SERIAL_DEVICE -m $RADIO_MODEL_ID --vfo F $gw_freq $DATBND
-        #
         # Set Gateway frequency
-        #
-        set_freq_ret=$($RIGCTL -r $SERIAL_DEVICE -m $RADIO_MODEL_ID F $gw_freq)
-        if [ ! -z "$set_freq_ret" ] ; then
-            vfomode_read=$($RIGCTL -r /dev/ttyUSB0  -m234 v)
-            echo "ERROR: set freq: mode=$vfomode_read,  error:$set_freq_ret" | tee -a $GATEWAY_LOGFILE
-        fi
+        set_vfo_freq $gw_freq
 
         # The following just sets freq_name & radio index for log file
         find_mem_chan $gw_freq
@@ -458,7 +492,7 @@ function check_gateway() {
     fi
 
     # Verify frequency has been set
-    read_freq=$($RIGCTL -r $SERIAL_DEVICE  -m234 f)
+    read_freq=$($RIGCTL -r $SERIAL_DEVICE  -m $RADIO_MODEL_ID f)
 
     if [ "$read_freq" -ne "$gw_freq" ] ; then
         echo "Failed to set frequency: $gw_freq for Gateway: $gw_call, read freq: $read_freq" | tee -a $GATEWAY_LOGFILE
@@ -470,7 +504,7 @@ function check_gateway() {
     if $b_test_connect ; then
         # Connect with paclink-unix
         dbgecho "Waiting for wl2kax25 to return ..."
-        wl2kax25 -c "$gw_call"
+        $WL2KAX25 -c "$gw_call"
         connect_status="$?"
     else
         connect_status=0
@@ -631,7 +665,7 @@ fi
 # So this command will set which radio in the TM-V71 is default radio
 # Returns which frequency VFOx is set to
 
-datbnd_freq=$($RIGCTL  -r /dev/ttyUSB0 -m234  --vfo f $DATBND)
+datbnd_freq=$($RIGCTL  -r $SERIAL_DEVICE -m $RADIO_MODEL_ID  --vfo f $DATBND)
 
 # Assign some variables
 
