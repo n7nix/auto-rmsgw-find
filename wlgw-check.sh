@@ -638,7 +638,7 @@ if $b_refresh_gwlist ; then
     echo "Refreshing RMS List"
     echo
     # Save recent RMS Gateway list
-    cp $TMPDIR/rmsgwprot.txt $TMPDIR/rmsgwprot.bak
+    cp $TMPDIR/rmsgwprox.txt $TMPDIR/rmsgwprox.bak
     # Assume rmslist.sh installed to ~/bin
     # rmsglist arg1=distance in miles, arg2=grid square, arg3=mute output
     # Create file in $HOME/tmp/rmsgwprox.txt
