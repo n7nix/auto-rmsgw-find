@@ -75,9 +75,10 @@ function usage() {
    echo "Usage: $scriptname [-g <gridsquare>][-v][-h]" >&2
    echo " If no gps is found, gridsquare must be entered."
    echo "   -g <gridsquare> | --gridsquare"
-   echo "   -d | --debug   display debug messages"
-   echo "   -t | --test    test rig ctrl with NO connect"
-   echo "   -h | --help    display this message"
+   echo "   -d | --debug      display debug messages"
+   echo "   -r | --no_refresh use existing RMS Gateway list"
+   echo "   -t | --test       test rig ctrl with NO connect"
+   echo "   -h | --help       display this message"
    echo
 }
 
@@ -183,6 +184,7 @@ function set_vfo_freq() {
     vfo_freq="$1"
     ret_code=1
     to_secs=$SECONDS
+    to_time=0
     b_found_error=false
 
     while [ $ret_code -gt 0 ] && [ $((SECONDS-to_secs)) -lt 5 ] ; do
@@ -205,7 +207,7 @@ function set_vfo_freq() {
         fi
      done
 
-    if $b_found_error ; then
+    if $b_found_error && [ $to_time -gt 3 ] ; then
         vfomode_read=$($RIGCTL -r $SERIAL_DEVICE  -m $RADIO_MODEL_ID v)
         echo "RIG CTRL ERROR[$errorcode]: set freq: $vfo_freq, TOut: $to_time, VFO mode=$vfomode_read, error:$errorsetfreq" | tee -a $GATEWAY_LOGFILE
     fi
@@ -219,6 +221,7 @@ function set_vfo_mode() {
 
     ret_code=1
     to_secs=$SECONDS
+    to_time=0
     b_found_error=false
 
     while [ $ret_code -gt 0 ] && [ $((SECONDS-to_secs)) -lt 5 ] ; do
@@ -238,7 +241,7 @@ function set_vfo_mode() {
         fi
     done
 
-    if $b_found_error ; then
+    if $b_found_error && [ $to_time -gt 3 ] ; then
         echo "RIG CTRL ERROR[$errorcode]: set vfo mode: TOut: $to_time, VFO mode=$vfomode_read, error:$errorvfomode" | tee -a $GATEWAY_LOGFILE
     fi
 
@@ -266,6 +269,7 @@ function set_memchan_index() {
     mem_index=$1
     ret_code=1
     to_secs=$SECONDS
+    to_time=0
     b_found_error=false
 
     while [ $ret_code -gt 0 ] && [ $((SECONDS-to_secs)) -lt 5 ] ; do
@@ -286,7 +290,8 @@ function set_memchan_index() {
             ret_code=0
         fi
     done
-    if $b_found_error ; then
+
+    if $b_found_error  && [ $to_time -gt 3 ] ; then
         echo "RIG CTRL ERROR[$errorcode]: set memory index: $mem_index, TOut: $to_time, error:$err_mem_ret"  | tee -a $GATEWAY_LOGFILE
     fi
 
@@ -632,9 +637,21 @@ if $b_refresh_gwlist ; then
     echo
     echo "Refreshing RMS List"
     echo
+    # Save recent RMS Gateway list
+    cp $TMPDIR/rmsgwprot.txt $TMPDIR/rmsgwprot.bak
     # Assume rmslist.sh installed to ~/bin
-    # rmsglist arg1=distance in miles, arg2=grid square
+    # rmsglist arg1=distance in miles, arg2=grid square, arg3=mute output
+    # Create file in $HOME/tmp/rmsgwprox.txt
+
     $BINDIR/rmslist.sh $GWDIST $gridsquare S
+
+    diff $TMPDIR/rmsgwprox.txt $TMPDIR/rmsgwprox.bak > /dev/null 2>&1
+    if [ "$?" -ne 0 ] ; then
+        echo "RMS GW proximity file has changed"
+        linecnt_new=$(wc -l $TMPDIR/rmsgwprox.txt | cut -d ' ' -f1)
+        linecnt_old=$(wc -l $TMPDIR/rmsgwprox.bak | cut -d ' ' -f1)
+        echo "New proximity file has $linecnt_new entries, old file has $linecnt_old"
+    fi
 fi
 
 # Get which Radio is designated digital
@@ -730,7 +747,7 @@ while read fileline ; do
             connect_count=$((connect_count + 1))
             connect_status="OK"
         else
-            connect_status="TO"
+            connect_status="to"
             echo
             echo "Call to wl2kax25 timed out"
             echo
