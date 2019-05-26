@@ -24,6 +24,9 @@ b_crontab=false
 scriptname="`basename $0`"
 TMPDIR="$HOME/tmp"
 GATEWAY_LOGFILE="$TMPDIR/gateway.log"
+RMS_STATS_FILE="$TMPDIR/rmsgw_stats.log"
+declare -A row
+
 BINDIR="$HOME/bin"
 LOCAL_BINDIR="/usr/local/bin"
 
@@ -348,7 +351,7 @@ function find_mem_chan() {
                 chan_status="OK"
                 retcode=0
             else
-                chan_status="Err"
+                chan_status="n/a"
                 radio_index="   "
             fi
 
@@ -517,6 +520,25 @@ function check_gateway() {
      return $connect_status
 }
 
+# ===== function make_array
+
+function make_array() {
+
+while read fileline ; do
+    # collapse all spaces
+    fileline=$(echo $fileline | tr -s '[[:space:]]')
+
+    # File some variables from Winlink web service call
+    wl_freq=$(cut -d' ' -f2 <<< $fileline)
+    wl_freq=$(echo $wl_freq | cut -c-6)
+    gw_name=$(cut -d' ' -f1 <<< $fileline)
+    index="${gw_name}_${wl_freq}"
+    dbgecho "Using index $index"
+    row[$index]=0
+done < $RMS_PROXIMITY_FILE_OUT
+
+}
+
 #
 # ==== main
 #
@@ -556,6 +578,17 @@ if ! $b_crontab ; then
     fi
 fi
 
+# Verify that the stats array file exists
+if [ ! -e "$RMS_STATS_FILE" ] ; then
+    echo "Initializing RMS Stats file"
+    make_array
+    # Update RMS Gateway count file
+    declare -p row > "$RMS_STATS_FILE"
+else
+    echo "Using existing $RMS_STATS_FILE"
+    source -- "$RMS_STATS_FILE" || exit
+fi
+
 # if there are any args then parse them
 while [[ $# -gt 0 ]] ; do
    key="$1"
@@ -576,6 +609,14 @@ while [[ $# -gt 0 ]] ; do
       -t|--test)
          b_test_connect=false
          echo "Set test rig control only flag"
+         ;;
+      -s|--stats)
+         printf "     Gateway\t\tConnects\n"
+         for i in "${!row[@]}" ; do
+             printf "%16s\t%3s\n" "$i" "${row[$i]}"
+         done
+         echo "Number of gateways: in array: ${#row[@]}, in list $(wc -l $RMS_PROXIMITY_FILE_OUT)"
+         exit 0
          ;;
       -h|--help)
          usage
@@ -746,6 +787,10 @@ while read fileline ; do
         if [ "$?" -eq 0 ] ; then
             connect_count=$((connect_count + 1))
             connect_status="OK"
+            short_freq=$(echo $wl_freq | cut -c-6)
+            index="${gw_name}_${short_freq}"
+            dbgecho "Using index $index: value: ${row[$index]}"
+            row[$index]=$((row[$index] + 1))
         else
             connect_status="to"
             echo
@@ -760,7 +805,7 @@ while read fileline ; do
 
     # Variables set from csv programming file
     # freq_name, radio_index
-    printf "%-10s  %s\t%2s\t%s\t%4s   %6s\t%4s\t  %d\n"  "$gw_name" "$wl_freq" "$distance" "$freq_name" "$radio_index" "$chan_status" "$connect_status" $((SECONDS-next_sec)) | tee -a $GATEWAY_LOGFILE
+    printf "%-10s  %s\t%2s\t%s\t%4s   %6s\t%4s\t  %d %d\n"  "$gw_name" "$wl_freq" "$distance" "$freq_name" "$radio_index" "$chan_status" "$connect_status" $((SECONDS-next_sec)) ${row[$index]}  | tee -a $GATEWAY_LOGFILE
 
     # Debug only: quit or pause after some attempts
     if [ $((gateway_count % 5)) -eq 0 ] && [ $total_gw_count -gt 5 ] ; then
@@ -776,6 +821,10 @@ while read fileline ; do
     fi
 
 done < $RMS_PROXIMITY_FILE_OUT
+
+# Update RMS Gateway count file
+declare -p row > "$RMS_STATS_FILE"
+echo "Number of gateways: in array: ${#row[@]}, in list $(wc -l $RMS_PROXIMITY_FILE_OUT)"
 
 # Get elapsed time in seconds
 et=$((SECONDS-start_sec))
