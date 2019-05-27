@@ -469,6 +469,7 @@ function check_gateway() {
     dbgecho "Connect to: $gw_call with radio using freq $gw_freq"
     debug_check "start"
 
+    # Set frequency
     if (( gw_freq >= 144000000 )) && (( gw_freq < 148000000 )) ; then
         b_2MBand=true
         vfo_mode=$($RIGCTL -r $SERIAL_DEVICE -m $RADIO_MODEL_ID v)
@@ -521,6 +522,9 @@ function check_gateway() {
 }
 
 # ===== function make_array
+# Make an associative array:
+# Index: gatway name plus first six digits of frequency
+# Data: count of number of times gateway has connnected.
 
 function make_array() {
 
@@ -537,6 +541,43 @@ while read fileline ; do
     row[$index]=0
 done < $RMS_PROXIMITY_FILE_OUT
 
+}
+
+# ==== function get_gateway_list
+
+function get_gateway_list() {
+    # Verify that a working Internet connection exists
+    # TARGET_URL="http://google.com"
+    TARGET_URL="http://example.com"
+    wget --quiet --spider $TARGET_URL
+    if [ $? -ne 0 ] ; then
+        echo "Internet connection down, RMS List not refreshed."
+    else
+        echo
+        echo "Refreshing RMS List"
+        echo
+        # Does RMS Gateway proximitiy file exist?
+        if [ -e $RMS_PROXIMITY_FILE_OUT ] ; then
+            # Save recent RMS Gateway list
+            cp $RMS_PROXIMITY_FILE_OUT $TMPDIR/rmsgwprox.bak
+        fi
+        # Assume rmslist.sh installed to ~/bin
+        # rmsglist arg1=distance in miles, arg2=grid square, arg3=mute output
+        # Create file in $HOME/tmp/rmsgwprox.txt
+
+        $BINDIR/rmslist.sh $GWDIST $gridsquare S
+
+        # Does RMS Gateway proximitiy file exist?
+        if [ -e $RMS_PROXIMITY_FILE_OUT ] ; then
+            diff $RMS_PROXIMITY_FILE_OUT $TMPDIR/rmsgwprox.bak > /dev/null 2>&1
+            if [ "$?" -ne 0 ] ; then
+                echo "RMS GW proximity file has changed"
+                linecnt_new=$(wc -l $TMPDIR/rmsgwprox.txt | cut -d ' ' -f1)
+                linecnt_old=$(wc -l $TMPDIR/rmsgwprox.bak | cut -d ' ' -f1)
+                echo "New proximity file has $linecnt_new entries, old file has $linecnt_old"
+            fi
+        fi
+    fi
 }
 
 #
@@ -675,24 +716,19 @@ dbgecho "Using grid square: $gridsquare"
 
 # For DEV do not refresh the rmslist output file
 if $b_refresh_gwlist ; then
-    echo
-    echo "Refreshing RMS List"
-    echo
-    # Save recent RMS Gateway list
-    cp $TMPDIR/rmsgwprox.txt $TMPDIR/rmsgwprox.bak
-    # Assume rmslist.sh installed to ~/bin
-    # rmsglist arg1=distance in miles, arg2=grid square, arg3=mute output
-    # Create file in $HOME/tmp/rmsgwprox.txt
-
-    $BINDIR/rmslist.sh $GWDIST $gridsquare S
-
-    diff $TMPDIR/rmsgwprox.txt $TMPDIR/rmsgwprox.bak > /dev/null 2>&1
-    if [ "$?" -ne 0 ] ; then
-        echo "RMS GW proximity file has changed"
-        linecnt_new=$(wc -l $TMPDIR/rmsgwprox.txt | cut -d ' ' -f1)
-        linecnt_old=$(wc -l $TMPDIR/rmsgwprox.bak | cut -d ' ' -f1)
-        echo "New proximity file has $linecnt_new entries, old file has $linecnt_old"
+    get_gateway_list
+else
+    # Get here if do not want to refresh gateway list ... unless it doesn't exit
+    if [ ! -e $RMS_PROXIMITY_FILE_OUT ] ; then
+        get_gateway_list
     fi
+fi
+
+# Can not proceed without the RMS Gateway proximity file
+# Does RMS Gateway proximitiy file exist?
+if [ ! -e $RMS_PROXIMITY_FILE_OUT ] ; then
+    echo "No Gateway proxmity file found: $RMS_PROXIMITY_FILE_OUT, exiting"
+    exit 1
 fi
 
 # Get which Radio is designated digital
@@ -750,7 +786,7 @@ echo "Start: $(date "+%Y %m %d %T %Z"): grid: $gridsquare, debug: $DEBUG, GW lis
 
 # Table header is 2 lines
 printf  "\n\t\t\t\t\t\tChan\tConn\n" | tee -a $GATEWAY_LOGFILE
-printf "RMS GW\t    Freq\tDist\tName\tIndex\tStat\tStat\tTime\n" | tee -a $GATEWAY_LOGFILE
+printf "RMS GW\t    Freq\tDist\tName\tIndex\tStat\tStat\tTime  Conn\n" | tee -a $GATEWAY_LOGFILE
 
 while read fileline ; do
 
@@ -767,14 +803,17 @@ while read fileline ; do
         echo "Warning: Frequency violates Line A"
     fi
 
+    #setup index for statistics collection
+    short_freq=$(echo $wl_freq | cut -c-6)
+    index="${gw_name}_${short_freq}"
+    dbgecho "Using index $index: value: ${row[$index]}"
+
     next_sec=$SECONDS
     freq_name="unknown"
     connect_status="n/a"
     total_gw_count=$((total_gw_count + 1))
-# Set frequency
-# Confirm frequency is set
 
-    # Qualify stations found
+    # Qualify RMS Gateways found by frequency
     if [ "$distance" != 0 ] && (
     ( (( "$wl_freq" >= 144000000 )) && (( "$wl_freq" < 148000000 )) ) ||
     ( (( "$wl_freq" >= 420000000 )) && (( "$wl_freq" < 450000000 )) ) ); then
@@ -787,9 +826,6 @@ while read fileline ; do
         if [ "$?" -eq 0 ] ; then
             connect_count=$((connect_count + 1))
             connect_status="OK"
-            short_freq=$(echo $wl_freq | cut -c-6)
-            index="${gw_name}_${short_freq}"
-            dbgecho "Using index $index: value: ${row[$index]}"
             row[$index]=$((row[$index] + 1))
         else
             connect_status="to"
@@ -805,7 +841,7 @@ while read fileline ; do
 
     # Variables set from csv programming file
     # freq_name, radio_index
-    printf "%-10s  %s\t%2s\t%s\t%4s   %6s\t%4s\t  %d %d\n"  "$gw_name" "$wl_freq" "$distance" "$freq_name" "$radio_index" "$chan_status" "$connect_status" $((SECONDS-next_sec)) ${row[$index]}  | tee -a $GATEWAY_LOGFILE
+    printf "%-10s  %s\t%2s\t%s\t%4s   %6s\t%4s\t %2d   %d\n"  "$gw_name" "$wl_freq" "$distance" "$freq_name" "$radio_index" "$chan_status" "$connect_status" $((SECONDS-next_sec)) ${row[$index]}  | tee -a $GATEWAY_LOGFILE
 
     # Debug only: quit or pause after some attempts
     if [ $((gateway_count % 5)) -eq 0 ] && [ $total_gw_count -gt 5 ] ; then
