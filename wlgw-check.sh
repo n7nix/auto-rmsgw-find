@@ -80,6 +80,7 @@ function usage() {
    echo "   -g <gridsquare> | --gridsquare"
    echo "   -d | --debug      display debug messages"
    echo "   -r | --no_refresh use existing RMS Gateway list"
+   echo "   -s | --stats      display statistics"
    echo "   -t | --test       test rig ctrl with NO connect"
    echo "   -h | --help       display this message"
    echo
