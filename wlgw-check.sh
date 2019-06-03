@@ -517,7 +517,8 @@ function check_gateway() {
         $WL2KAX25 -c "$gw_call"
         connect_status="$?"
     else
-        connect_status=0
+        # Set connect_status to fail
+        connect_status=1
     fi
      return $connect_status
 }
@@ -566,7 +567,9 @@ function get_gateway_list() {
         # rmsglist arg1=distance in miles, arg2=grid square, arg3=mute output
         # Create file in $HOME/tmp/rmsgwprox.txt
 
+#        echo "DEBUG: rmslist: $BINDIR/rmslist.sh $GWDIST $gridsquare S"
         $BINDIR/rmslist.sh $GWDIST $gridsquare S
+#        $BINDIR/rmslist.sh $GWDIST $gridsquare
 
         # Does RMS Gateway proximitiy file exist?
         if [ -e $RMS_PROXIMITY_FILE_OUT ] ; then
