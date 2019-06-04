@@ -12,6 +12,12 @@
 
 # Used by rmslist.sh to set gateway distance from specified grid square
 GWDIST=35
+# Radio model number used by HamLib
+# List radio model id numbers: rigctl -l
+# Radio Model Number 234 specifies a Kenwood D710 which nearly works for a
+#  Kenwood TM-V71a
+RADIO_MODEL_ID=234
+
 # Will refresh RMS list if true
 b_refresh_gwlist=true
 
@@ -37,11 +43,6 @@ WL2KAX25="$LOCAL_BINDIR/wl2kax25"
 SERIAL_DEVICE="/dev/ttyUSB0"
 # Choose which radio left (VFOA) or right (VFOB) is DATA Radio
 DATBND="VFOA"
-
-# Radio model number used by HamLib
-# Radio Model Number 234 specifies a Kenwood D710 which nearly works for a
-#  Kenwood TM-V71a
-RADIO_MODEL_ID=234
 
 DIGI_FREQ_LIST="$BINDIR/freqlist_digi.txt"
 RMS_PROXIMITY_FILE_OUT="$TMPDIR/rmsgwprox.txt"
