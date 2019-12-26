@@ -37,6 +37,14 @@ function get_lat_lon_gpsdsentence() {
 # Will be set either from command line or gps
 gridsquare=
 
+# Verify gpsd is running
+journalctl --no-pager -u gpsd | tail -n 1 | grep -i error
+retcode="$?"
+if [ "$retcode" -eq 0 ] ; then
+    echo "gpsd daemon is not running without errors."
+    exit 1
+fi
+
 # Verify gpsd is returning sentences
 is_gps_sentence
 result=$?
