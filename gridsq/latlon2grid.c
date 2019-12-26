@@ -1,4 +1,6 @@
 /*
+ * latlon2grid.c
+ *
  * Copied this code from here:
  * https://ham.stackexchange.com/questions/221/how-can-one-convert-from-lat-long-to-grid-square
  * Author: Ossi Vaananen
@@ -7,6 +9,11 @@
  * 4829.07       12254.11
  * 48°29.06910', 122°54.11470'
  * 48.4844850°, 122.9019117°
+ *
+ * no args: validate test data
+ * arg1: latitude (format xx.yyyyy) see struct s_testdata
+ * arg2: longitude (format xxx.yyyyy)  see struct s_testdata
+ *
  */
 
 #if 0
@@ -96,6 +103,8 @@ void calcLocator(char *dst, double lat, double lon) {
 
         rLat = (adjLat - (int)(adjLat)) * 60;
         a3 = (int)(rLat/2.5);
+
+        pr_debug("%d %d %d, %d %d %d\n", o1, o2, o3, a1, a2, a3);
 
         dst[0] = (char)o1 + 'A';
         dst[1] = (char)a1 + 'A';
