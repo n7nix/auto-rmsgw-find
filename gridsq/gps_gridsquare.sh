@@ -84,8 +84,7 @@ if [ ! -e "$(pwd)/latlon2grid" ] ; then
     fi
 fi
 
-# Assume latlon2grid installed to ~/bin
-# Arguments need to be in decimal degrees ie:
+# lat/lon arguments to latlon2grid need to be in decimal degrees ie:
 #  48.48447 -122.901885
 gridsquare=$($BINDIR/latlon2grid $lat $lon)
 
