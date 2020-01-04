@@ -12,7 +12,7 @@ line.
 ```
 wlgw-check.sh -g CN88nl
 ```
-_wlgw-check.sh_ paclink-unix wl2kax25 for connection evaluation.
+_wlgw-check.sh_ uses paclink-unix _wl2kax25_ for connection evaluation.
 
 
 #### Requirements
@@ -21,7 +21,7 @@ This script is used with the following programs to locate and connect to a Winli
 
 * [paclink-unix](https://github.com/nwdigitalradio/paclink-unix)
 * [rmslist.sh](https://github.com/nwdigitalradio/n7nix/blob/master/bin/rmslist.sh)
-* [[rigctl](https://www.mankier.com/1/rigctl) (HamLib)
+* [rigctl](https://www.mankier.com/1/rigctl) (HamLib)
 * [gpsd](http://www.catb.org/gpsd/)
 * [latlon2grid](https://github.com/n7nix/auto-rmsgw-find/tree/master/gridsq)
 
