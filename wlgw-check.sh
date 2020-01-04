@@ -233,7 +233,7 @@ function set_vfo_mode() {
     to_time=0
     b_found_error=false
 
-    while [ $ret_code -gt 0 ] && [ $((SECONDS-to_secs)) -lt 10 ; do
+    while [ $ret_code -gt 0 ] && [ $((SECONDS-to_secs )) -lt 10 ] ; do
 
         vfomode=$($RIGCTL -r $SERIAL_DEVICE  -m $RADIO_MODEL_ID  V $DATBND)
         returncode=$?
