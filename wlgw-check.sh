@@ -261,13 +261,35 @@ function set_vfo_mode() {
 
 function set_memchan_mode() {
     dbgecho "Set vfo mode to MEM"
-    memchanmode=$($RIGCTL -r $SERIAL_DEVICE  -m $RADIO_MODEL_ID  V MEM)
-    if [ ! -z "$memchanmode" ] ; then
-        vfomode_read=$($RIGCTL -r $SERIAL_DEVICE  -m $RADIO_MODEL_ID v)
-        echo "RIG CTRL ERROR: MEM mode=$vfomode_read, error:$memchanmode" | tee -a $GATEWAY_LOGFILE
-        # DEBUG temporary
-        exit 1
+
+    ret_code=1
+    to_secs=$SECONDS
+    to_time=0
+    b_found_error=false
+
+    while [ $ret_code -gt 0 ] && [ $((SECONDS-to_secs )) -lt 10 ] ; do
+
+        memchanmode=$($RIGCTL -r $SERIAL_DEVICE  -m $RADIO_MODEL_ID  V MEM)
+        returncode=$?
+        if [ ! -z "$memchanmode" ] ; then
+            ret_code=1
+            memmode_read=$($RIGCTL -r $SERIAL_DEVICE  -m $RADIO_MODEL_ID v)
+            errormemmode=$memchanmode
+            errorcode=$returncode
+            to_time=$((SECONDS-to_secs))
+            b_found_error=true
+
+        else
+            ret_code=0
+        fi
+    done
+
+    if $b_found_error && [ $to_time -gt 3 ] ; then
+        echo "RIG CTRL ERROR[$errorcode]: set MEM mode: TOut: $to_time, MEM mode=$memmode_read, error:$errormemmode" | tee -a $GATEWAY_LOGFILE
+        echo "RIG CTRL ERROR: MEM mode=$memmode_read, error:$memchanmode" | tee -a $GATEWAY_LOGFILE
     fi
+
+    return $ret_code
 }
 
 # ===== function set_memchan_index
