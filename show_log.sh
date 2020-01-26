@@ -22,10 +22,10 @@ if [ $# -gt 0 ] ; then
     date_yest=$(date --date="yesterday" "+%Y %m %d")
     datespec=$date_yest
     # Get line number of required dates first entry
-    start_line_numb=$(grep -n "$date_yest" $TMPDIR/$LOGFILE | head -n 1 | cut -d':' -f1)
+    start_line_numb=$(grep --binary-files=text -n "$date_yest" $TMPDIR/$LOGFILE | head -n 1 | cut -d':' -f1)
     start_line_numb=$((start_line_numb-1))
     # Get line number of todays date first entry
-    end_line_numb=$(grep -n "$date_now" $TMPDIR/$LOGFILE | head -n 1 | cut -d':' -f1)
+    end_line_numb=$(grep --binary-files=text -n "$date_now" $TMPDIR/$LOGFILE | head -n 1 | cut -d':' -f1)
 
     # number of lines starting at yesterdays first log entry
     numb_lines=$((total_lines - start_line_numb))
@@ -37,7 +37,7 @@ if [ $# -gt 0 ] ; then
 
 else
     # Show todays log
-    start_line_numb=$(grep -n "$datespec" $TMPDIR/$LOGFILE | head -n 1 | cut -d':' -f1)
+    start_line_numb=$(grep --binary-files=text -n "$datespec" $TMPDIR/$LOGFILE | head -n 1 | cut -d':' -f1)
     start_line_numb=$((start_line_numb-1))
     numb_lines=$((total_lines - start_line_numb))
 
