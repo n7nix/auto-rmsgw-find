@@ -1,8 +1,40 @@
 ## auto-rmsgw-find
-Automatically find and test  a Winlink RMS Gateway
+
+#### mheard-mail.sh
+
+Manually specify an RMS Gateway call sign from list provided by
+_mheard_
+
+**Usage:** mheard-mail.sh [-d][-h]
+```
+   -d        set debug flag
+   -h        display this message
+```
+
+The _mheard-mail.sh_ script is not directly related to the
+_auto-rmsgw-find.sh_ script but provides an easy way to identify
+nearby RMS Gateways captured by the _mheard_ utility and connect to
+that gateway . It prompts for a gateway call sign and execs wl2kax25
+
+###### Depends on
+* mheard - an ax25 tools utility
+* paclink-unix
 
 
-#### wlgw-check.sh
+### wlgw-check.sh
+
+Automatically find and attempt to connect to a Winlink RMS Gateway
+
+**Usage:** wlgw-check.sh [-g <gridsquare>][-d][-r][-s][-t][-h]
+```
+ If no gps is found, gridsquare must be entered.
+   -g <gridsquare> | --gridsquare
+   -d | --debug      display debug messages
+   -r | --no_refresh use existing RMS Gateway list
+   -s | --stats      display statistics
+   -t | --test       test rig ctrl with NO connect
+   -h | --help       display this message
+```
 
 **NOTE:** This script uses rig control for a Kenwood TM-V71a **ONLY**
 
