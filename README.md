@@ -1,7 +1,10 @@
 ## auto-rmsgw-find
 Automatically find and test  a Winlink RMS Gateway
 
+
 #### wlgw-check.sh
+
+**NOTE:** This script uses rig control for a Kenwood TM-V71a **ONLY**
 
 Interrogate Winlink Web services to find registered Winlink RMS Gateways within some distance of a grid square location.
 
