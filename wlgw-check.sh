@@ -76,7 +76,7 @@ function dev_setup() {
 # ===== function usage
 
 function usage() {
-   echo "Usage: $scriptname [-g <gridsquare>][-v][-h]" >&2
+   echo "Usage: $scriptname [-g <gridsquare>][-d][-r][-s][-t][-h]" >&2
    echo " If no gps is found, gridsquare must be entered."
    echo "   -g <gridsquare> | --gridsquare"
    echo "   -d | --debug      display debug messages"
