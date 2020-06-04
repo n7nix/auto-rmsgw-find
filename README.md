@@ -20,6 +20,31 @@ that gateway . It prompts for a gateway call sign and execs wl2kax25
 * mheard - an ax25 tools utility
 * paclink-unix
 
+##### To run from desktop icon
+
+* Get rid of annoying dialog box that prompts for what to do with an
+executable
+* File manager > Edit > Preferences > General
+  * Check _Don't ask options on launch executable file_
+
+###### Example Desktop icon file
+
+* Put this file in your _Desktop_ directory
+  * This is an example only, make your own Icon
+
+```
+[Desktop Entry]
+Name=mheard-mail
+Exec=sh -c '/home/pi/bin/mheard-mail.sh; $SHELL'
+Comment=Click to connect
+Icon=/usr/share/desktop-base/debian-logos/logo-64.png
+Terminal=true
+Type=Application
+Categories=HamRadio
+Keywords=Ham Radio;AX.25
+X-KeepTerminal=true
+```
+
 
 ### wlgw-check.sh
 
