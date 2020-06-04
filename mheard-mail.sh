@@ -5,13 +5,17 @@
 #  Use mheard to create a list of local -10 winlink RMS Gateways
 #  Prompt for a call sign from that list and call wl2kax25
 #
-# This script written at request of  Ed Bloom, KD9FRQ June 3, 2020
+# This script written at request of Ed Bloom, KD9FRQ June 3, 2020
+DEBUG=
 
-PORTNAME="udr0"
+PORTNAME="udr1"
+COLUMNS=5
+scriptname="`basename $0`"
 
 function dbgecho { if [ ! -z "$DEBUG" ] ; then echo "$*"; fi }
 
 # ===== function get_callsign
+# Prompt for a call sign from mheard generated displayed list
 
 function get_callsign() {
 
@@ -42,14 +46,52 @@ function get_callsign() {
     return $retcode
 }
 
+# ===== function usage
+
+function usage() {
+    echo "Usage: $scriptname [-d][-h]" >&2
+    echo "   -d        set debug flag"
+    echo "   -h        display this message"
+    echo
+}
 
 # ===== main
+
+while [[ $# -gt 0 ]] ; do
+APP_ARG="$1"
+
+case $APP_ARG in
+
+   -d|--debug)
+      DEBUG=1
+      echo "Debug mode on"
+   ;;
+   -h|--help|-?)
+      usage
+      exit 0
+   ;;
+   *)
+       echo "Unrecognized command line argument: $APP_ARG"
+       usage
+       exit 0
+   ;;
+
+esac
+
+shift # past argument
+done
 
 # Get mheard list
 heardlist=$(mheard | grep "$PORTNAME" | tr -s '[[:space:]] ')
 
-echo "Found $(grep -c "\-10" <<< $heardlist) RMS Gateway call signs"
+# Count number of gateways
+num_gateways=$(grep -c "\-10" <<< $heardlist)
+echo "Found $num_gateways RMS Gateway call signs"
 echo
+if [ "$num_gateways" -eq 0 ] ; then
+    exit 0
+fi
+
 printline=
 linecnt=0
 while IFS= read -r line ; do
@@ -69,7 +111,7 @@ while IFS= read -r line ; do
         # echo "line count: $linecnt, print: $printline, port: $portline"
     fi
 
-    if [ "$linecnt" -ge 5 ] ; then
+    if [ "$linecnt" -ge "$COLUMNS" ] ; then
          printf "%s\n" "$printline"
          linecnt=0
          printline=
@@ -78,7 +120,7 @@ while IFS= read -r line ; do
 done <<< $heardlist
 
 # Display last line if appropriate
-if [ ! -z $printline ] ; then
+if [ ! -z "$printline" ] ; then
      printf "%s\n" "$printline"
 fi
 
@@ -89,10 +131,16 @@ done
 
 echo "Using this call sign: $CALLSIGN"
 
-wl2kax25 -V -a $PORTNAME -c ${CALLSIGN}-10
-retcode="$?"
-if [ "$retcode" -eq 0 ] ; then
-    echo "SUCCESSFUL connection to ${CALLSIGN}-10"
+# If debug turned ON, do not use radio
+if [ -z "$DEBUG" ] ; then
+    wl2kax25 -V -a $PORTNAME -c ${CALLSIGN}-10
+    retcode="$?"
+    if [ "$retcode" -eq 0 ] ; then
+        echo "SUCCESSFUL connection to ${CALLSIGN}-10"
+    else
+        echo "FAILED connection to ${CALLSIGN}-10"
+    fi
 else
-    echo "FAILED connection to ${CALLSIGN}-10"
+    echo
+    echo "wl2kax25 NOT called because debug turned on"
 fi
