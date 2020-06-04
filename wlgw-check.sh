@@ -541,7 +541,7 @@ function check_gateway() {
     if $b_test_connect ; then
         # Connect with paclink-unix
         dbgecho "Waiting for wl2kax25 to return ..."
-        $WL2KAX25 -c "$gw_call"
+        $WL2KAX25 -V -c "$gw_call"
         connect_status="$?"
     else
         # Set connect_status to fail
@@ -825,9 +825,10 @@ while read fileline ; do
     fileline=$(echo $fileline | tr -s '[[:space:]]')
 
     # File some variables from Winlink web service call
-    distance=$(cut -d' ' -f3 <<< $fileline)
-    wl_freq=$(cut -d' ' -f2 <<< $fileline)
-    gw_name=$(cut -d' ' -f1 <<< $fileline)
+    baud_rate=$(cut -d' ' -f4 <<< $fileline)
+     distance=$(cut -d' ' -f3 <<< $fileline)
+      wl_freq=$(cut -d' ' -f2 <<< $fileline)
+      gw_name=$(cut -d' ' -f1 <<< $fileline)
 
     # Using a TM-V71a 2M/440 dual band radio
     if (( "$wl_freq" >= 420000000 )) && (( "$wl_freq" < 430000000 )) ; then
@@ -858,6 +859,8 @@ while read fileline ; do
             connect_count=$((connect_count + 1))
             connect_status="OK"
             row[$index]=$((row[$index] + 1))
+            echo
+            echo "Call to wl2kax25 connect OK"
         else
             connect_status="to"
             echo
