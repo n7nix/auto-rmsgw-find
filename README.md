@@ -12,7 +12,7 @@ _mheard_
 ```
 
 The _mheard-mail.sh_ script is not directly related to the
-_auto-rmsgw-find.sh_ script but provides an easy way to identify
+_auto-rmsgw-find_ scripts but provides an easy way to identify
 nearby RMS Gateways captured by the _mheard_ utility and connect to
 that gateway . It prompts for a gateway call sign and execs wl2kax25
 
