@@ -14,6 +14,65 @@ scriptname="`basename $0`"
 
 function dbgecho { if [ ! -z "$DEBUG" ] ; then echo "$*"; fi }
 
+# ===== function get_mheard_list
+# Get mheard list with -10 ssids
+
+function get_mheard_list() {
+
+    heardlist=$(mheard | grep "$PORTNAME" | tr -s '[[:space:]]')
+
+    # If these two counts are not equal this script will NOT work
+    chk_all_gateways=$(mheard | grep -c "$PORTNAME")
+    verify_all_gateways=$(wc -l <<< $heardlist)
+
+    if [ "$chk_all_gateways" -ne  "$verify_all_gateways" ] ; then
+        echo "Version check: check all cnt: $chk_all_gateways, verify: $verify_all_gateways"
+        bash_ver=$(bash --version | grep -m 1 -i version | cut -f4 -d' ')
+        echo "This script needs a newer version of bash. Currently running: $bash_ver"
+        exit 0
+    fi
+
+    # Count number of gateways
+    num_gateways=$(grep -c "\-10" <<< $heardlist)
+    echo "Found $num_gateways RMS Gateway call signs"
+    echo
+    if [ "$num_gateways" -eq 0 ] ; then
+        exit 0
+    fi
+
+    printline=
+    linecnt=0
+    while IFS= read -r line ; do
+
+        # echo "DEBUG: line: $line"
+        # Check if this entry was an RMS Gateway
+        portline=$( grep "\-10" <<< $line)
+        if [ $? -eq 0 ] ; then
+            portline=$(echo "$line" | cut -f1 -d '-')
+
+            (( linecnt++ ))
+            if [ $linecnt -eq 1 ] ; then
+                printline="$portline"
+            else
+                printline="$(printf "%s\t%s" "$printline" "$portline")"
+            fi
+            # echo "line count: $linecnt, print: $printline, port: $portline"
+        fi
+
+        if [ "$linecnt" -ge "$COLUMNS" ] ; then
+            printf "%s\n" "$printline"
+            linecnt=0
+            printline=
+        fi
+
+    done <<< $heardlist
+
+    # Display last line if appropriate
+    if [ ! -z "$printline" ] ; then
+        printf "%s\n" "$printline"
+    fi
+}
+
 # ===== function get_callsign
 # Prompt for a call sign from mheard generated displayed list
 
@@ -51,6 +110,7 @@ function get_callsign() {
 function usage() {
     echo "Usage: $scriptname [-d][-h]" >&2
     echo "   -d        set debug flag"
+    echo "   -l        list all heard RMS Gateways only"
     echo "   -h        display this message"
     echo
 }
@@ -62,18 +122,22 @@ APP_ARG="$1"
 
 case $APP_ARG in
 
+   -l|--list)
+        get_mheard_list
+        exit 0
+   ;;
    -d|--debug)
-      DEBUG=1
-      echo "Debug mode on"
+        DEBUG=1
+        echo "Debug mode on"
    ;;
    -h|--help|-?)
-      usage
-      exit 0
+        usage
+        exit 0
    ;;
    *)
-       echo "Unrecognized command line argument: $APP_ARG"
-       usage
-       exit 0
+        echo "Unrecognized command line argument: $APP_ARG"
+        usage
+        exit 0
    ;;
 
 esac
@@ -81,48 +145,7 @@ esac
 shift # past argument
 done
 
-# Get mheard list
-heardlist=$(mheard | grep "$PORTNAME" | tr -s '[[:space:]] ')
-
-# Count number of gateways
-num_gateways=$(grep -c "\-10" <<< $heardlist)
-echo "Found $num_gateways RMS Gateway call signs"
-echo
-if [ "$num_gateways" -eq 0 ] ; then
-    exit 0
-fi
-
-printline=
-linecnt=0
-while IFS= read -r line ; do
-
-    # echo "DEBUG: line: $line"
-    # Check if this entry was an RMS Gateway
-    portline=$( grep "\-10" <<< $line)
-    if [ $? -eq 0 ] ; then
-        portline=$(echo "$line" | cut -f1 -d '-')
-
-        (( linecnt++ ))
-        if [ $linecnt -eq 1 ] ; then
-            printline="$portline"
-        else
-            printline="$(printf "%s\t%s" "$printline" "$portline")"
-        fi
-        # echo "line count: $linecnt, print: $printline, port: $portline"
-    fi
-
-    if [ "$linecnt" -ge "$COLUMNS" ] ; then
-         printf "%s\n" "$printline"
-         linecnt=0
-         printline=
-    fi
-
-done <<< $heardlist
-
-# Display last line if appropriate
-if [ ! -z "$printline" ] ; then
-     printf "%s\n" "$printline"
-fi
+get_mheard_list
 
 # prompt for a callsign
 while ! get_callsign ; do
