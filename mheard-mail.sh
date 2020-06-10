@@ -33,6 +33,7 @@ function get_mheard_list() {
     fi
 
     # Count number of gateways
+    # Assume that an SSID of 10 means it is an RMS Gateway
     num_gateways=$(grep -c "\-10" <<< $heardlist)
     echo "Found $num_gateways RMS Gateway call signs"
     echo
@@ -40,6 +41,7 @@ function get_mheard_list() {
         exit 0
     fi
 
+    # Loop through list of RMS Gateways and format output to be $COLUMNS wide
     printline=
     linecnt=0
     while IFS= read -r line ; do
