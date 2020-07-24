@@ -19,6 +19,7 @@ that gateway . It prompts for a gateway call sign and execs wl2kax25
 ###### Depends on
 * mheard - an ax25 tools utility
 * paclink-unix
+* bash version 4.3-7 and above
 
 ##### To run from desktop icon
 
@@ -26,6 +27,11 @@ that gateway . It prompts for a gateway call sign and execs wl2kax25
 executable
 * File manager > Edit > Preferences > General
   * Check _Don't ask options on launch executable file_
+* Copy script to be executed from icon, _mheard-mail.sh_ to local bin
+directory
+```
+cp mheard-mail.sh ~/bin
+```
 
 ###### Example Desktop icon file
 
