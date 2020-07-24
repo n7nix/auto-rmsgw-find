@@ -8,7 +8,7 @@
 #  - generated RMS Gateway list from Winlink Web Services
 #
 # Uncomment this statement for debug echos
-# DEBUG=1
+DEBUG=
 
 # Used by rmslist.sh to set gateway distance from specified grid square
 GWDIST=35
@@ -31,6 +31,8 @@ scriptname="`basename $0`"
 TMPDIR="$HOME/tmp"
 GATEWAY_LOGFILE="$TMPDIR/gateway.log"
 RMS_STATS_FILE="$TMPDIR/rmsgw_stats.log"
+GATEWAY_REJECT_FILE="$TMPDIR/gateway_reject.txt"
+AXPORTS_FILE="/etc/ax25/axports"
 declare -A row
 
 BINDIR="$HOME/bin"
@@ -611,6 +613,29 @@ function get_gateway_list() {
     fi
 }
 
+# ==== function create_reject_file
+# Create a reject file with users call sign in it.
+
+function create_reject_file() {
+   # Get users call sign
+   linecnt=$(grep -vc '^#' $AXPORTS_FILE)
+   if (( linecnt > 1 )) ; then
+      dbgecho "axports: found $linecnt lines that are not comments"
+   fi
+   # Collapse all spaces on lines that do not begin with a comment
+   getline=$(grep -v '^#' $AXPORTS_FILE | grep -v 'N0ONE' | tr -s '[[:space:]] ')
+   dbgecho "axports: found line: $getline"
+
+   CALLSIGN=$(echo $getline | cut -d ' ' -f2 | cut -d ' ' -f1)
+   dbgecho "axports: found call sign: $CALLSIGN"
+   # Test if callsign string is not null
+  if [ -z "$CALLSIGN" ] ; then
+      CALLSIGN="NONE"
+  fi
+
+   echo $CALLSIGN > "$GATEWAY_REJECT_FILE"
+}
+
 #
 # ==== main
 #
@@ -805,19 +830,29 @@ echo "Current Chan: $save_mem_chan, name: $chan_name, chan freq: $chan_freq, Fre
 # Make sure radio is in VFO mode
 set_vfo_mode
 
+# Verify reject file exists & if not create it
+if [ ! -f "$GATEWAY_REJECT_FILE" ] ; then
+    dbgecho "Creating_reject_file"
+    create_reject_file
+    dbgecho "Creating_reject_file: end"
+fi
+
 # Iterate each line of the RMS Proximity file
 
 total_gw_count=0
 gateway_count=0
 connect_count=0
+reject_count=0
 start_sec=$SECONDS
 
-echo | tee -a $GATEWAY_LOGFILE
-echo "Start: $(date "+%Y %m %d %T %Z"): grid: $gridsquare, debug: $DEBUG, GW list refresh: $b_refresh_gwlist, connect: $b_test_connect, cron: $b_crontab" | tee -a $GATEWAY_LOGFILE
+# if [ -z "$DEBUG" ] ; then
+    echo | tee -a $GATEWAY_LOGFILE
+    echo "Start: $(date "+%Y %m %d %T %Z"): grid: $gridsquare, debug: $DEBUG, GW list refresh: $b_refresh_gwlist, connect: $b_test_connect, cron: $b_crontab" | tee -a $GATEWAY_LOGFILE
 
-# Table header is 2 lines
-printf  "\n\t\t\t\t\t\tChan\tConn\n" | tee -a $GATEWAY_LOGFILE
-printf "RMS GW\t    Freq\tDist\tName\tIndex\tStat\tStat\tTime  Conn\n" | tee -a $GATEWAY_LOGFILE
+    # Table header is 2 lines
+    printf  "\n\t\t\t\t\t\tChan\tConn\n" | tee -a $GATEWAY_LOGFILE
+    printf "RMS GW\t    Freq\tDist\tName\tIndex\tStat\tStat\tTime  Conn\n" | tee -a $GATEWAY_LOGFILE
+#fi
 
 while read fileline ; do
 
@@ -826,9 +861,19 @@ while read fileline ; do
 
     # File some variables from Winlink web service call
     baud_rate=$(cut -d' ' -f4 <<< $fileline)
-     distance=$(cut -d' ' -f3 <<< $fileline)
-      wl_freq=$(cut -d' ' -f2 <<< $fileline)
-      gw_name=$(cut -d' ' -f1 <<< $fileline)
+    distance=$(cut -d' ' -f3 <<< $fileline)
+    wl_freq=$(cut -d' ' -f2 <<< $fileline)
+    gw_name=$(cut -d' ' -f1 <<< $fileline)
+
+    # Filter out call signs from the gateway reject file
+    grep $gw_name $GATEWAY_REJECT_FILE  >/dev/null 2>&1
+    retcode="$?"
+    if [ "$retcode" -eq 0 ] ; then
+        echo "Skipping call sign: $gw_name"
+        reject_count=$((reject_count + 1))
+        continue;
+    fi
+    dbgecho "DEBUG: Reject list test for $gw_name, retcode: $retcode"
 
     # Using a TM-V71a 2M/440 dual band radio
     if (( "$wl_freq" >= 420000000 )) && (( "$wl_freq" < 430000000 )) ; then
@@ -899,7 +944,7 @@ echo "Number of gateways: in array: ${#row[@]}, in list $(wc -l $RMS_PROXIMITY_F
 # Get elapsed time in seconds
 et=$((SECONDS-start_sec))
 echo
-echo "Finish: $(date "+%Y %m %d %T %Z"): Elapsed time: $(((et % 3600)/60)) min, $((et % 60)) secs,  Found $gateway_count RMS Gateways, connected: $connect_count"  | tee -a $GATEWAY_LOGFILE
+echo "Finish: $(date "+%Y %m %d %T %Z"): Elapsed time: $(((et % 3600)/60)) min, $((et % 60)) secs,  Found $gateway_count RMS Gateways, connected: $connect_count, rejected: $reject_count"  | tee -a $GATEWAY_LOGFILE
 echo
 # Set radio back to original memory channel
 set_memchan_mode
