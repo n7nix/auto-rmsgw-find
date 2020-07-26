@@ -16,6 +16,9 @@ GWDIST=35
 # List radio model id numbers: rigctl -l
 # Radio Model Number 234 specifies a Kenwood D710 which nearly works for a
 #  Kenwood TM-V71a
+# Crontab entry
+# 5  */6   *   *   *  /bin/bash /home/<user>/bin/wlgw-check.sh -g CN88nl
+
 RADIO_MODEL_ID=234
 
 # Will refresh RMS list if true
@@ -543,7 +546,8 @@ function check_gateway() {
     if $b_test_connect ; then
         # Connect with paclink-unix
         dbgecho "Waiting for wl2kax25 to return ..."
-        $WL2KAX25 -V -c "$gw_call"
+#        $WL2KAX25 -V -c "$gw_call"
+        $WL2KAX25 -c "$gw_call"
         connect_status="$?"
     else
         # Set connect_status to fail
@@ -698,6 +702,7 @@ while [[ $# -gt 0 ]] ; do
       -d|--debug)
          DEBUG=1
          echo "Set debug flag"
+         WL2KAX25="$LOCAL_BINDIR/wl2kax25 -V"
          ;;
       -r|--norefresh)
          b_refresh_gwlist=false
