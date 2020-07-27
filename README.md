@@ -56,10 +56,11 @@ X-KeepTerminal=true
 
 Automatically find and attempt to connect to a Winlink RMS Gateway
 
-**Usage:** wlgw-check.sh [-g <gridsquare>][-d][-r][-s][-t][-h]
+**Usage:** ```wlgw-check.sh [-a <ax25_port_name>][-g <gridsquare>][-d][-r][-s][-t][-h]```
 ```
  If no gps is found, gridsquare must be entered.
-   -g <gridsquare> | --gridsquare
+   -a <portname>   | --portname   Specify ax.25 port name ie. udr0 or udr1"
+   -g <gridsquare> | --gridsquare Specify a six character grid square"
    -d | --debug      display debug messages
    -r | --no_refresh use existing RMS Gateway list
    -s | --stats      display statistics
@@ -67,13 +68,15 @@ Automatically find and attempt to connect to a Winlink RMS Gateway
    -h | --help       display this message
 ```
 
-**NOTE:** This script uses rig control for a Kenwood TM-V71a **ONLY**
+* **NOTE:** If you are setting the ax25 port name with __-a__ option you probably should be setting the default port name in the paclink-unix config file
+_/usr/local/etc/wl2k.conf_, ax25port=
+* **NOTE:** This script uses rig control for a Kenwood TM-V71a **ONLY**
 
-Interrogate Winlink Web services to find registered Winlink RMS Gateways within some distance of a grid square location.
+This script interrogates Winlink Web Services to find registered Winlink RMS Gateways within some distance of a grid square location.
 
 If a gps is found the grid square location is determined from Lat &
 Lon co-ordinates otherwise grid square must be specified on command
-line.
+line, ie.
 
 ```
 wlgw-check.sh -g CN88nl

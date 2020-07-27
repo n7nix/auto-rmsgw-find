@@ -24,11 +24,15 @@ RADIO_MODEL_ID=234
 # Will refresh RMS list if true
 b_refresh_gwlist=true
 
+# Default to paclink-unix config file
+AX25PORTNAME=
+
 # Set to true for activating paclink-unix
 # Set to false to test rig control, with no connect
 # Set by -t command line arg
 b_test_connect=true
 b_crontab=false
+bhave_gps=true
 
 scriptname="`basename $0`"
 TMPDIR="$HOME/tmp"
@@ -76,20 +80,6 @@ function dev_setup() {
     fi
     cp -u gridsq/latlon2grid ~/bin
 #    cp -u rmslist.sh ~/bin
-}
-
-# ===== function usage
-
-function usage() {
-   echo "Usage: $scriptname [-g <gridsquare>][-d][-r][-s][-t][-h]" >&2
-   echo " If no gps is found, gridsquare must be entered."
-   echo "   -g <gridsquare> | --gridsquare"
-   echo "   -d | --debug      display debug messages"
-   echo "   -r | --no_refresh use existing RMS Gateway list"
-   echo "   -s | --stats      display statistics"
-   echo "   -t | --test       test rig ctrl with NO connect"
-   echo "   -h | --help       display this message"
-   echo
 }
 
 # ===== function in_path
@@ -490,7 +480,8 @@ function check_radio_mem() {
 }
 
 #===== function check_gateway
-# arg1: radio memory index
+# arg1: gateway frequency
+# arg2: gateway call sign
 # Set 2M frequencies with VFO & 440 frequencies with memory index
 
 function check_gateway() {
@@ -499,7 +490,6 @@ function check_gateway() {
     # Set 'failed' return code
     connect_status=1
 
-    dbgecho "Connect to: $gw_call with radio using freq $gw_freq"
     debug_check "start"
 
     # Set frequency
@@ -546,8 +536,11 @@ function check_gateway() {
     if $b_test_connect ; then
         # Connect with paclink-unix
         dbgecho "Waiting for wl2kax25 to return ..."
-#        $WL2KAX25 -V -c "$gw_call"
-        $WL2KAX25 -c "$gw_call"
+        if [ -z "$AX25PORTNAME" ] ; then
+            $WL2KAX25 -c "$gw_call"
+        else
+            $WL2KAX25 -a $AX25PORTNAME -c "$gw_call"
+        fi
         connect_status="$?"
     else
         # Set connect_status to fail
@@ -640,6 +633,21 @@ function create_reject_file() {
    echo $CALLSIGN > "$GATEWAY_REJECT_FILE"
 }
 
+# ===== function usage
+
+function usage() {
+   echo "Usage: $scriptname [-a <ax25_port_name][-g <gridsquare>][-d][-r][-s][-t][-h]" >&2
+   echo " If no gps is found, gridsquare must be entered."
+   echo "   -a <portname>   | --portname   Specify ax.25 port name ie. udr0 or udr1"
+   echo "   -g <gridsquare> | --gridsquare Specify a six character grid square"
+   echo "   -d | --debug      display debug messages"
+   echo "   -r | --no_refresh use existing RMS Gateway list"
+   echo "   -s | --stats      display statistics"
+   echo "   -t | --test       test rig ctrl with NO connect"
+   echo "   -h | --help       display this message"
+   echo
+}
+
 #
 # ==== main
 #
@@ -655,28 +663,6 @@ dbgecho "PID test: cmd: $P_COMMAND"
 # Test name against cron
 if [ "$P_COMMAND" == "cron" ]; then
     b_crontab=true
-fi
-
-# Temporary to put programs in local bin dir
-# dev_setup
-
-if ! $b_crontab ; then
-    # This script uses these programs
-    # It also uses gpsd but only if it is installed
-    PROGRAM_LIST="rigctl latlon2grid rmslist.sh"
-    b_exitnow=false
-    for progname in $PROGRAM_LIST ; do
-        in_path "$progname"
-        retcode=$?
-#       dbgecho "Checking prog: $progname: $retcode"
-        if [ "$retcode" -ne 0 ] ; then
-            b_exitnow=true
-        fi
-    done
-
-    if $b_exitnow ; then
-        exit 1
-    fi
 fi
 
 # Verify that the stats array file exists
@@ -695,9 +681,16 @@ while [[ $# -gt 0 ]] ; do
    key="$1"
 
    case $key in
+      -a|--portname)   # set ax25 port
+        AX25PORTNAME="$2"
+        shift # past argument
+        echo "Should not have to use '-a' option"
+        echo " Check paclink-unix config file, ax25port"
+        ;;
       -g|--gridsquare)
 	 gridsquare="$2"
-         shift # past argumnet
+         shift # past argument
+         bhave_gps=false
 	 ;;
       -d|--debug)
          DEBUG=1
@@ -733,34 +726,61 @@ while [[ $# -gt 0 ]] ; do
 shift # past argument or value
 done
 
-# Determine if gpsd is installed
-prog_name="gpsd"
-type -P $prog_name  >/dev/null 2>&1
-if [ "$?"  -ne 0 ]; then
-    # gpsd not installed
-    # Was gridsquare set from command line?
-    if [ -z "$gridsquare" ] ; then
-        # No gpsd & not specified on command line
-        # Prompt for gridsquare
+# Temporary to put programs in local bin dir
+# dev_setup
 
-        read -t 1 -n 10000 discard
-        echo -n "Enter grid square eg; CN88nl, followed by [enter]"
-        # -p display PROMPT without a trailing new line
-        # -e readline is used to obtain the line
-        read -ep ": " gridsquare
+if ! $b_crontab ; then
+    # This script uses these programs
+    # It also uses gpsd but only if it is installed
+    PROGRAM_LIST="rigctl rmslist.sh"
+    if $bhave_gps ; then
+        PROGRAM_LIST="rigctl rmslist.sh latlon2grid"
     fi
-else
-    dbgecho "Found $prog_name"
-    # Was gridsquare set from command line?
-    if [ -z "$gridsquare" ] ; then
-        # Determine Grid Square location from gps
-        get_location
-        echo "We are here: lat: $lat$latdir, lon: $lon$londir"
+    b_exitnow=false
+    for progname in $PROGRAM_LIST ; do
+        in_path "$progname"
+        retcode=$?
+#       dbgecho "Checking prog: $progname: $retcode"
+        if [ "$retcode" -ne 0 ] ; then
+            b_exitnow=true
+        fi
+    done
 
-        # Assume latlon2grid installed to ~/bin
-        # Arguments need to be in decimal degrees ie:
-        #  48.48447 -122.901885
-        gridsquare=$($BINDIR/latlon2grid $lat $lon)
+    if $b_exitnow ; then
+        exit 1
+    fi
+fi
+
+if $bhave_gps ; then
+    # Determine if gpsd is installed
+    prog_name="gpsd"
+    type -P $prog_name  >/dev/null 2>&1
+    if [ "$?"  -ne 0 ]; then
+        # gpsd not installed
+        # Was gridsquare set from command line?
+        if [ -z "$gridsquare" ] ; then
+            # No gpsd & not specified on command line
+            # Prompt for gridsquare
+
+            read -t 1 -n 10000 discard
+            echo -n "Enter grid square eg; CN88nl, followed by [enter]"
+            # -p display PROMPT without a trailing new line
+            # -e readline is used to obtain the line
+            read -ep ": " gridsquare
+        fi
+    else
+        dbgecho "Found $prog_name"
+        # Was gridsquare set from command line?
+        if [ -z "$gridsquare" ] ; then
+            # Determine Grid Square location from gps
+            get_location
+            echo "We are here: lat: $lat$latdir, lon: $lon$londir"
+
+            # Assume latlon2grid installed to ~/bin
+            # Arguments need to be in decimal degrees ie:
+            #  48.48447 -122.901885
+            gridsquare=$($BINDIR/latlon2grid $lat $lon)
+        fi
     fi
 fi
 
@@ -849,10 +869,12 @@ gateway_count=0
 connect_count=0
 reject_count=0
 start_sec=$SECONDS
+gw_call_last=
+gw_freq_last=
 
 # if [ -z "$DEBUG" ] ; then
     echo | tee -a $GATEWAY_LOGFILE
-    echo "Start: $(date "+%Y %m %d %T %Z"): grid: $gridsquare, debug: $DEBUG, GW list refresh: $b_refresh_gwlist, connect: $b_test_connect, cron: $b_crontab" | tee -a $GATEWAY_LOGFILE
+    echo "Start: $(date "+%Y %m %d %T %Z"): grid: $gridsquare, debug: $DEBUG, GW list refresh: $b_refresh_gwlist, connect: $b_test_connect, cron: $b_crontab, port: $AX25PORTNAME" | tee -a $GATEWAY_LOGFILE
 
     # Table header is 2 lines
     printf  "\n\t\t\t\t\t\tChan\tConn\n" | tee -a $GATEWAY_LOGFILE
@@ -873,12 +895,23 @@ while read fileline ; do
     # Filter out call signs from the gateway reject file
     grep $gw_name $GATEWAY_REJECT_FILE  >/dev/null 2>&1
     retcode="$?"
+
+    dbgecho "DEBUG: Reject list test for $gw_name, retcode: $retcode"
     if [ "$retcode" -eq 0 ] ; then
         echo "Skipping call sign: $gw_name"
         reject_count=$((reject_count + 1))
         continue;
     fi
-    dbgecho "DEBUG: Reject list test for $gw_name, retcode: $retcode"
+
+    # Filter out duplicate entries
+    dbgecho "Connect to: $gw_name with radio using freq $wl_freq"
+    if [ "$gw_name" = "$gw_call_last" ] && [ "$wl_freq" = "$gw_freq_last" ] ; then
+        echo "Found duplicate: gateway: $gw_name, frequency: $wl_freq"
+        continue;
+    fi
+
+    gw_call_last=$gw_name
+    gw_freq_last=$wl_freq
 
     # Using a TM-V71a 2M/440 dual band radio
     if (( "$wl_freq" >= 420000000 )) && (( "$wl_freq" < 430000000 )) ; then
