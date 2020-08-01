@@ -1,6 +1,23 @@
 ## auto-rmsgw-find
 
-#### mheard-mail.sh
+### Installation tip
+* Either use git to clone repo __or__ use wget to download a tarball of the files.
+
+##### To get a copy of the repository using git:
+
+```
+git clone https://github.com/n7nix/auto-rmsgw-find
+```
+##### Use wget to create a zipped tarball:
+```
+# To get a tar zipped file, rmsgw.tgz
+wget -O auto-rmsgw-find.tgz https://github.com/n7nix/auto-rmsgw-find/tarball/master
+
+# To create a directory with source files from the zipped tarball
+wget -O - https://github.com/n7nix/auto-rmsgw-find/tarball/master | tar -xz
+```
+
+### mheard-mail.sh
 
 Manually specify an RMS Gateway call sign from list provided by
 _mheard_
