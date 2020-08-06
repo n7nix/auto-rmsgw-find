@@ -11,6 +11,7 @@ DEBUG=
 PORTNAME="udr1"
 COLUMNS=5
 scriptname="`basename $0`"
+bListOnly=false
 
 function dbgecho { if [ ! -z "$DEBUG" ] ; then echo "$*"; fi }
 
@@ -23,7 +24,7 @@ function get_mheard_list() {
 
     # If these two counts are not equal this script will NOT work
     chk_all_gateways=$(mheard | grep -c "$PORTNAME")
-    verify_all_gateways=$(wc -l <<< $heardlist)
+    verify_all_gateways=$(grep $PORTNAME <<< $heardlist | wc -l)
 
     if [ "$chk_all_gateways" -ne  "$verify_all_gateways" ] ; then
         echo "Version check: check all cnt: $chk_all_gateways, verify: $verify_all_gateways"
@@ -35,7 +36,7 @@ function get_mheard_list() {
     # Count number of gateways
     # Assume that an SSID of 10 means it is an RMS Gateway
     num_gateways=$(grep -c "\-10" <<< $heardlist)
-    echo "Found $num_gateways RMS Gateway call signs"
+    echo "Found $num_gateways RMS Gateway call signs on port $PORTNAME"
     echo
     if [ "$num_gateways" -eq 0 ] ; then
         exit 0
@@ -110,9 +111,10 @@ function get_callsign() {
 # ===== function usage
 
 function usage() {
-    echo "Usage: $scriptname [-d][-h]" >&2
+    echo "Usage: $scriptname [-a <portname>][-d][-l][-h]" >&2
+    echo "   -a <portname>   | --portname   Specify ax.25 port name ie. udr0 or udr1"
     echo "   -d        set debug flag"
-    echo "   -l        list all heard RMS Gateways only"
+    echo "   -l        list all heard RMS Gateways on a port"
     echo "   -h        display this message"
     echo
 }
@@ -123,10 +125,17 @@ while [[ $# -gt 0 ]] ; do
 APP_ARG="$1"
 
 case $APP_ARG in
-
+    -a|--portname)   # set ax25 port
+        PORTNAME="$2"
+        shift # past argument
+        if [ "$PORTNAME" != "udr0" ] && [ "$PORTNAME" != "udr1" ] ; then
+            echo "  Invalid port name: $PORTNAME"
+            echo "  Must be either udr0 or udr1"
+            exit 1
+        fi
+    ;;
    -l|--list)
-        get_mheard_list
-        exit 0
+        bListOnly=true
    ;;
    -d|--debug)
         DEBUG=1
@@ -148,6 +157,9 @@ shift # past argument
 done
 
 get_mheard_list
+if $bListOnly ; then
+    exit
+fi
 
 # prompt for a callsign
 while ! get_callsign ; do
