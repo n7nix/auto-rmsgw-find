@@ -31,6 +31,7 @@ AX25PORTNAME=
 # Set to false to test rig control, with no connect
 # Set by -t command line arg
 b_test_connect=true
+
 b_crontab=false
 bhave_gps=true
 
@@ -164,15 +165,81 @@ function get_location() {
     fi
 }
 
+# ===== function get_ext_data_band
+#
+# Could return any of the following: (see tmd710.c)
+#   TMD710_EXT_DATA_BAND_A 0
+#   TMD710_EXT_DATA_BAND_B 1
+#   TMD710_EXT_DATA_BAND_TXA_RXB 2
+#   TMD710_EXT_DATA_BAND_TXB_RXA 3
+
+function get_ext_data_band() {
+    ret_code=$($RIGCTL -r $SERIAL_DEVICE  -m $RADIO_MODEL_ID  l EXTDATABAND)
+    return $ret_code
+}
+
+# ===== function check_radio_band
+
+function check_radio_band() {
+
+    vfo_mode=$($RIGCTL -r $SERIAL_DEVICE -m $RADIO_MODEL_ID v)
+    if ["$vfo_mode" -ne "MEM" ] ; then
+        $RIGCTL -r $SERIAL_DEVICE -m $RADIO_MODEL_ID V MEM
+    fi
+    curr_freq=$($RIGCTL -r $SERIAL_DEVICE -m $RADIO_MODEL_ID f)
+
+    b_2MBand=false
+    if (( "$curr_freq" >= 144000000 )) && (( "$curr_freq" < 148000000 )) ; then
+        b_2MBand=true
+    fi
+
+    # Set frequency to 440125000
+    $RIGCTL -r $SERIAL_DEVICE -m $RADIO_MODEL_ID E 131
+    $RIGCTL -r $SERIAL_DEVICE -m $RADIO_MODEL_ID F 440125000
+}
+
+##
+### Start compare here
+##
+
+# ===== function gw_log
+# Write string to gateway log file
+
+function gw_log() {
+    log_entry="$1"
+    echo "$(date): $log_entry" | tee -a $GATEWAY_LOGFILE
+}
+
+# ===== function ctrl_c trap handler
+
+function ctrl_c() {
+    echo
+    gw_log "Exiting script from trapped CTRL-C"
+    echo
+    # Set radio back to original memory channel
+    set_memchan_mode
+    echo "Setting radio back to original memory channel $save_mem_chan"
+    $RIGCTL -r $SERIAL_DEVICE -m $RADIO_MODEL_ID E $save_mem_chan
+
+    exit
+}
+
+# trap ctrl-c and call function ctrl_c()
+trap ctrl_c INT
+
 # ===== function debug_check
 
 function debug_check() {
 
+    strarg="$1"
+
     if [ ! -z "$DEBUG" ] ; then
-        strarg="$1"
         freq=$($RIGCTL -r $SERIAL_DEVICE  -m $RADIO_MODEL_ID f)
         xcurr_freq=$($RIGCTL -r $SERIAL_DEVICE  -m $RADIO_MODEL_ID --vfo f $DATBND)
-        echo "debug_check: $strarg: Current frequency: VFOA: $xcurr_freq, freq: $freq"
+        echo "${FUNCNAME[0]}: $strarg: Current frequency: VFOA: $xcurr_freq, freq: $freq"
+    else
+        freq=$($RIGCTL -r $SERIAL_DEVICE  -m $RADIO_MODEL_ID f)
+        echo "${FUNCNAME[0]}: $strarg: freq: $freq"
     fi
 }
 
@@ -182,6 +249,8 @@ function debug_check() {
 function set_vfo_freq() {
 
     vfo_freq="$1"
+    dbgecho "set_vfo_freq: $vfo_freq"
+
     ret_code=1
     to_secs=$SECONDS
     to_time=0
@@ -209,7 +278,7 @@ function set_vfo_freq() {
 
     if $b_found_error && [ $to_time -gt 3 ] ; then
         vfomode_read=$($RIGCTL -r $SERIAL_DEVICE  -m $RADIO_MODEL_ID v)
-        echo "RIG CTRL ERROR[$errorcode]: set freq: $vfo_freq, TOut: $to_time, VFO mode=$vfomode_read, error:$errorsetfreq" | tee -a $GATEWAY_LOGFILE
+        gw_log "RIG CTRL ERROR[$errorcode]: set freq: $vfo_freq, TOut: $to_time, VFO mode=$vfomode_read, error:$errorsetfreq"
     fi
 
     return $ret_code
@@ -222,6 +291,8 @@ function set_vfo_freq() {
 
 
 function set_vfo_mode() {
+
+    dbgecho "Set_vfo_mode"
 
     ret_code=1
     to_secs=$SECONDS
@@ -246,7 +317,7 @@ function set_vfo_mode() {
     done
 
     if $b_found_error && [ $to_time -gt 3 ] ; then
-        echo "RIG CTRL ERROR[$errorcode]: set vfo mode: TOut: $to_time, VFO mode=$vfomode_read, error:$errorvfomode" | tee -a $GATEWAY_LOGFILE
+        gw_log "RIG CTRL ERROR[$errorcode]: set vfo mode: TOut: $to_time, VFO mode=$vfomode_read, error:$errorvfomode"
     fi
 
     return $ret_code
@@ -280,8 +351,8 @@ function set_memchan_mode() {
     done
 
     if $b_found_error && [ $to_time -gt 3 ] ; then
-        echo "RIG CTRL ERROR[$errorcode]: set MEM mode: TOut: $to_time, MEM mode=$memmode_read, error:$errormemmode" | tee -a $GATEWAY_LOGFILE
-        echo "RIG CTRL ERROR: MEM mode=$memmode_read, error:$memchanmode" | tee -a $GATEWAY_LOGFILE
+        gw_log "RIG CTRL ERROR[$errorcode]: set MEM mode: TOut: $to_time, MEM mode=$memmode_read, error:$errormemmode"
+        gw_log "RIG CTRL ERROR: MEM mode=$memmode_read, error:$memchanmode"
     fi
 
     return $ret_code
@@ -293,6 +364,8 @@ function set_memchan_mode() {
 function set_memchan_index() {
 
     mem_index=$1
+    dbgecho "set_memchan_index: $mem_index"
+
     ret_code=1
     to_secs=$SECONDS
     to_time=0
@@ -318,22 +391,10 @@ function set_memchan_index() {
     done
 
     if $b_found_error  && [ $to_time -gt 3 ] ; then
-        echo "RIG CTRL ERROR[$errorcode]: set memory index: $mem_index, TOut: $to_time, error:$err_mem_ret"  | tee -a $GATEWAY_LOGFILE
+        gw_log "RIG CTRL ERROR[$errorcode]: set memory index: $mem_index, TOut: $to_time, error:$err_mem_ret"
     fi
+    dbgecho "set_memchan_index: $ret_code"
 
-    return $ret_code
-}
-
-# ===== function get_ext_data_band
-#
-# Could return any of the following: (see tmd710.c)
-#   TMD710_EXT_DATA_BAND_A 0
-#   TMD710_EXT_DATA_BAND_B 1
-#   TMD710_EXT_DATA_BAND_TXA_RXB 2
-#   TMD710_EXT_DATA_BAND_TXB_RXA 3
-
-function get_ext_data_band() {
-    ret_code=$($RIGCTL -r $SERIAL_DEVICE  -m $RADIO_MODEL_ID  l EXTDATABAND)
     return $ret_code
 }
 
@@ -356,6 +417,7 @@ function find_mem_chan() {
         lstf1=${listfreq/./}
         # Pad with trailing spaces to 9 characters
         lstf1=$(printf "%-0.9s" "${lstf1}000000000")
+
         # Compare frequency in csv file to frequency requested
         if [ "$set_freq" == "$lstf1" ] ; then
             # Get Radio index from csv file
@@ -365,11 +427,15 @@ function find_mem_chan() {
 
             # Verify with radio
             check_radio_mem $radio_index
+
             # Get rid of decimal in frequency
             radfreq=${chan_freq/./}
+
             # Pad with trailing spaces to 9 characters
             radfreq=$(printf "%-0.9s" "${radfreq}000000000")
+
             # Compare frequency from radio memory channel to required set frequency
+            # echo "debug2: find_mem_chan: Found: $set_freq $lstf1 $listfreq $radfreq $radio_index"
             if [ "$radfreq" == "$set_freq" ] ; then
                 chan_status="OK"
                 retcode=0
@@ -412,10 +478,16 @@ function get_mem() {
 
 function get_chan() {
 
+    retcode=0
 #    dbgecho "get_chan: arg: $1"
     chan_info=$($RIGCTL -r $SERIAL_DEVICE -m $RADIO_MODEL_ID  h $1)
     ret_code=$?
 #    echo "Ret code=$ret_code"
+    grep -i "error" <<< "$chan_info"
+    if [ $? -eq 0 ] ; then
+        retcode=1;
+    fi
+    return $ret_code
 }
 
 # ===== function get_vfo_freq
@@ -431,28 +503,6 @@ function get_vfo_freq() {
     fi
 }
 
-# ===== function check_radio_band
-
-function check_radio_band() {
-
-vfo_mode=$($RIGCTL -r $SERIAL_DEVICE -m $RADIO_MODEL_ID v)
-if ["$vfo_mode" -ne "MEM" ] ; then
-    $RIGCTL -r $SERIAL_DEVICE -m $RADIO_MODEL_ID V MEM
-fi
-curr_freq=$($RIGCTL -r $SERIAL_DEVICE -m $RADIO_MODEL_ID f)
-
-b_2MBand=false
-if (( "$curr_freq" >= 144000000 )) && (( "$curr_freq" < 148000000 )) ; then
-    b_2MBand=true
-fi
-
-# Set frequency to 440125000
-$RIGCTL -r $SERIAL_DEVICE -m $RADIO_MODEL_ID E 131
-
-$RIGCTL -r $SERIAL_DEVICE -m $RADIO_MODEL_ID F 440125000
-
-}
-
 # ===== function check_radio_mem
 # arg1: radio memory index
 
@@ -464,7 +514,7 @@ function check_radio_mem() {
     chan_info=
     get_chan $mem_chan
     if [ $? -ne 0 ] ; then
-        echo "Error could not get channel info from radio"
+        echo "${FUNCNAME[0]}: Error could not get channel info from radio"
     fi
     #echo -e "Channel info\n$chan_info"
 
@@ -474,23 +524,25 @@ function check_radio_mem() {
     chan_name=${chan_name%\'}
     chan_name=${chan_name#\'}
 
+    dbgecho "${FUNCNAME[0]}: name: $chan_name, info: $chan_info"
     # Get Frequency in MHz of channel number
     # Collapse white space
     chan_freq=$(grep -i "Freq:" <<<"$chan_info" | head -n1 | tr -s '[[:space:]] ' | cut -d ' ' -f2)
 }
 
-#===== function check_gateway
+# ===== function check_gateway
 # arg1: gateway frequency
 # arg2: gateway call sign
 # Set 2M frequencies with VFO & 440 frequencies with memory index
 
 function check_gateway() {
     gw_freq="$1"
+
     gw_call="$2"
     # Set 'failed' return code
     connect_status=1
 
-    debug_check "start"
+#    debug_check "start"
 
     # Set frequency
     if (( gw_freq >= 144000000 )) && (( gw_freq < 148000000 )) ; then
@@ -501,7 +553,9 @@ function check_gateway() {
             # Set memory channel index
             set_memchan_index 35
 
-            debug_check "Change to 2M band"
+            if [ ! -z "$DEBUG" ] ; then
+                debug_check "Change to 2M band"
+            fi
             # Now set VFO mode
             set_vfo_mode
         fi
@@ -511,23 +565,30 @@ function check_gateway() {
 
         # The following just sets freq_name & radio index for log file
         find_mem_chan $gw_freq
+        if [ $? -ne 0 ] ; then
+            debug_check "No index for $gw_freq"
+        fi
     else
         # Set 440 frequencies with a memory index
+        dbgecho "  Set VFO radio band to 440"
         set_memchan_mode
         find_mem_chan $gw_freq
         if [ $? -ne 0 ] ; then
-            echo "Can not set frequency $gw_freq, not in frequency list."
+            echo "Can not set frequency $gw_freq, not programmed in radio."
+            echo "Radio programming needs to match $DIGI_FREQ_LIST file"
             return 1
         fi
         $RIGCTL -r $SERIAL_DEVICE -m $RADIO_MODEL_ID E $radio_index
-        debug_check "440"
+        if [ ! -z "$DEBUG" ] ; then
+            debug_check "440"
+        fi
     fi
 
     # Verify frequency has been set
     read_freq=$($RIGCTL -r $SERIAL_DEVICE  -m $RADIO_MODEL_ID f)
 
     if [ "$read_freq" -ne "$gw_freq" ] ; then
-        echo "Failed to set frequency: $gw_freq for Gateway: $gw_call, read freq: $read_freq" | tee -a $GATEWAY_LOGFILE
+        gw_log "Failed to set frequency: $gw_freq for Gateway: $gw_call, read freq: $read_freq"
         return $connect_status
     else
         dbgecho "Frequency $read_freq set OK"
