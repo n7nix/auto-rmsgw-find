@@ -249,7 +249,7 @@ function debug_check() {
 function set_vfo_freq() {
 
     vfo_freq="$1"
-    dbgecho "set_vfo_freq: $vfo_freq"
+    dbgecho "${FUNCNAME[0]}: freq: $vfo_freq"
 
     ret_code=1
     to_secs=$SECONDS
@@ -270,12 +270,12 @@ function set_vfo_freq() {
             errorcode=$returncode
             to_time=$((SECONDS-to_secs))
             b_found_error=true
-
         else
             ret_code=0
         fi
      done
 
+    # Display some debug data
     if $b_found_error && [ $to_time -gt 3 ] ; then
         vfomode_read=$($RIGCTL -r $SERIAL_DEVICE  -m $RADIO_MODEL_ID v)
         gw_log "RIG CTRL ERROR[$errorcode]: set freq: $vfo_freq, TOut: $to_time, VFO mode=$vfomode_read, error:$errorsetfreq"
@@ -364,7 +364,7 @@ function set_memchan_mode() {
 function set_memchan_index() {
 
     mem_index=$1
-    dbgecho "set_memchan_index: $mem_index"
+    dbgecho "${FUNCNAME[0]}: index: $mem_index"
 
     ret_code=1
     to_secs=$SECONDS
@@ -391,9 +391,10 @@ function set_memchan_index() {
     done
 
     if $b_found_error  && [ $to_time -gt 3 ] ; then
-        gw_log "RIG CTRL ERROR[$errorcode]: set memory index: $mem_index, TOut: $to_time, error:$err_mem_ret"
+        get_mem
+        gw_log "RIG CTRL ERROR[$errorcode]: set index: $mem_index, read index: $mem_chan, TOut: $to_time, error:$err_mem_ret"
     fi
-    dbgecho "set_memchan_index: $ret_code"
+    dbgecho "${FUNCNAME[0]}: index: ret_code: $ret_code"
 
     return $ret_code
 }
@@ -578,7 +579,7 @@ function check_gateway() {
             echo "Radio programming needs to match $DIGI_FREQ_LIST file"
             return 1
         fi
-        $RIGCTL -r $SERIAL_DEVICE -m $RADIO_MODEL_ID E $radio_index
+        set_memchan_index $radio_index
         if [ ! -z "$DEBUG" ] ; then
             debug_check "440"
         fi
@@ -764,6 +765,7 @@ while [[ $# -gt 0 ]] ; do
          ;;
       -t|--test)
          b_test_connect=false
+         GATEWAY_LOGFILE=stdout
          echo "Set test rig control only flag"
          ;;
       -s|--stats)
@@ -999,17 +1001,20 @@ while read fileline ; do
 
         # Try to connect with RMS Gateway
         check_gateway $wl_freq "$gw_name"
-        if [ "$?" -eq 0 ] ; then
-            connect_count=$((connect_count + 1))
-            connect_status="OK"
-            row[$index]=$((row[$index] + 1))
-            echo
-            echo "Call to wl2kax25 connect OK"
-        else
-            connect_status="to"
-            echo
-            echo "Call to wl2kax25 timed out"
-            echo
+        retcode=$?
+        if [ $b_test_connect = true ] ; then
+            if [ "$retcode" -eq 0 ] ; then
+                connect_count=$((connect_count + 1))
+                connect_status="OK"
+                row[$index]=$((row[$index] + 1))
+                echo
+                echo "Call to wl2kax25 connect OK"
+            else
+                connect_status="to"
+                echo
+                echo "Call to wl2kax25 timed out"
+                echo
+            fi
         fi
     else
 #        dbgecho "Changing channel status to 'Unqaul' for freq: $wl_freq & gateway $gw_name"
@@ -1028,7 +1033,7 @@ while read fileline ; do
     fi
 
     if (( $total_gw_count > 50 )) ; then
-        echo "DEBUG: exit"
+        echo "DEBUG: too many gateways: $total_gw_count, exit"
         break;
     else
         dbgecho "gateway_count: $total_gw_count"
@@ -1036,8 +1041,11 @@ while read fileline ; do
 
 done < $RMS_PROXIMITY_FILE_OUT
 
-# Update RMS Gateway count file
-declare -p row > "$RMS_STATS_FILE"
+if [ $b_test_connect = true ] ; then
+    # Update RMS Gateway count file
+    declare -p row > "$RMS_STATS_FILE"
+fi
+
 echo "Number of gateways: in array: ${#row[@]}, in list $(wc -l $RMS_PROXIMITY_FILE_OUT)"
 
 # Get elapsed time in seconds
