@@ -100,6 +100,17 @@ wlgw-check.sh -g CN88nl
 ```
 _wlgw-check.sh_ uses paclink-unix _wl2kax25_ for connection evaluation.
 
+##### Testing
+* To verify rig control is working with the RMS Gateway list
+  * Will __NOT__ connect with an RMS Gateway and is used for rig control testing only
+```
+wlgw-check.sh -t -r -g <six_char_grid_square>
+```
+* To display the number of times a successful connection was made to an RMS Gateway call sign
+
+```
+wlgw-check.sh -s
+```
 
 #### Requirements
 
