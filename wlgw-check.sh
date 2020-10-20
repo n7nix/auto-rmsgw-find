@@ -7,19 +7,30 @@
 #  - csv programming file for radio
 #  - generated RMS Gateway list from Winlink Web Services
 #
+# Crontab entry to run 4 times a day
+# 5  */6   *   *   *  /bin/bash /home/<user>/bin/wlgw-check.sh -g CN88nl
+#
 # Uncomment this statement for debug echos
 DEBUG=
 
+# ===== Edit the following to match environment =====
 # Used by rmslist.sh to set gateway distance from specified grid square
 GWDIST=35
+
 # Radio model number used by HamLib
 # List radio model id numbers: rigctl -l
-# Radio Model Number 234 specifies a Kenwood D710 which nearly works for a
+# Radio Model Number 234 specifies a Kenwood D710 which mostly works for a
 #  Kenwood TM-V71a
-# Crontab entry
-# 5  */6   *   *   *  /bin/bash /home/<user>/bin/wlgw-check.sh -g CN88nl
-
 RADIO_MODEL_ID=234
+
+# Serial device that Kenwood PG-5G cable is plugged into
+SERIAL_DEVICE="/dev/ttyUSB0"
+
+# Initialize grid square variable
+# Will be set either from command line or gps
+gridsquare=
+
+# ===== end Edit section =====
 
 # Will refresh RMS list if true
 b_refresh_gwlist=true
@@ -49,9 +60,7 @@ LOCAL_BINDIR="/usr/local/bin"
 RIGCTL="$LOCAL_BINDIR/rigctl"
 WL2KAX25="$LOCAL_BINDIR/wl2kax25"
 
-# Serial device that Kenwood PG-5G cable is plugged into
-SERIAL_DEVICE="/dev/ttyUSB0"
-# Choose which radio left (VFOA) or right (VFOB) is DATA Radio
+ Choose which radio left (VFOA) or right (VFOB) is DATA Radio
 DATBND="VFOA"
 
 DIGI_FREQ_LIST="$BINDIR/freqlist_digi.txt"
@@ -62,10 +71,6 @@ BAND_2M_HI_LIM=148000000
 # 420 to 430 MHz is prohibited north of Line A
 BAND_440_LO_LIM=430000000
 BAND_440_HI_LIM=450000000
-
-# Initialize grid square variable
-# Will be set either from command line or gps
-gridsquare=
 
 function dbgecho { if [ ! -z "$DEBUG" ] ; then echo "$*"; fi }
 
@@ -656,6 +661,7 @@ function get_gateway_list() {
         # Create file in $HOME/tmp/rmsgwprox.txt
 
 #        echo "DEBUG: rmslist: $BINDIR/rmslist.sh $GWDIST $gridsquare S"
+        # Third argument for rmslist is silent option
         $BINDIR/rmslist.sh $GWDIST $gridsquare S
 #        $BINDIR/rmslist.sh $GWDIST $gridsquare
 
