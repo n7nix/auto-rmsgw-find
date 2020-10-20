@@ -1,5 +1,20 @@
 ## auto-rmsgw-find
 
+### Dependencies
+* gridsquare to get current Winlink services RMS GW list
+  * Used by _rmslist.sh_ script
+  * If a GPS device is not found then must use -g option witn _wlgw_check.sh_ script to specify grid square
+* RADIO_MODEL_ID used by _rigctl_ commands, defaults to TM-V71a
+* Could not reliably change VFO bands on Kenwood TM-V71a so set 440 frequencies using memory index
+  * Require csv file of NET frequencies programmed into radio to get radio memory index information
+* paclink-unix - _wlgw_check.sh_ uses wl2kax25 to connect to RMS Gateways
+* serial device name for rig control (SERIAL_DEVICE)
+  * Default to /dev/ttyUSB0 using a Kenwood PG-5G compatible cable
+* Restricted to VHF/UHF frequencies (Kenwood TM-V71a is a dual band radio)
+* Restricted to 1200 baud gateways but would be easy to include 9600 baud
+* Arbitrarily set distance to RMS Gateway to 35 miles
+  * Used to interrogate Winlink Web Services
+
 ### Installation tip
 * Either use git to clone repo __or__ use wget to download a tarball of the files.
 
@@ -165,24 +180,40 @@ Finish: 2019 05 28 00:12:04 PDT: Elapsed time: 7 min, 1 secs,  Found 15 RMS Gate
 $ ./wlgw-check.sh -s
 Using existing /home/gunn/tmp/rmsgw_stats.log
      Gateway		Connects
-KF7FIT-10_223780	  0
- W7BPD-10_145630	  0
-  KD7X-10_145630	  0
-KI7ULA-10_145050	  7
- W7ECG-10_144930	  0
-WA7GJZ-10_145630	  0
- AF5TR-10_145690	  0
- AF4PM-10_145690	 13
-VE7VIC-10_145690	  6
-KG7WFV-10_145630	  0
- K7KCA-10_440125	 11
- AE7LW-10_440950	  0
-KE7KML-10_223780	  0
-KC7OAS-10_144950	  0
- N7NIX-10_144910	  0
+ AF4PM-10_145690	1257
+ W7UMX-10_145630	1263
   NG2G-10_144990	  0
+VA7DEP-10_144430	  0
  AE7LW-10_145050	  0
-Number of gateways: in array: 17, in list 18 /home/gunn/tmp/rmsgwprox.txt
+VE7SPR-10_144970	1139
+WA7GJZ-10_145630	 18
+ W0QJM-10_145630	 35
+ N7NIX-10_144910	  0
+  N1SB-10_144970	 29
+  KD7X-10_145630	124
+ W7ECG-10_144930	  0
+ N7FDM-10_146437	  3
+KF7CFR-10_145050	  4
+KF7VOL-10_145010	  0
+KE7KML-10_223780	  0
+ AE7LW-10_440950	  0
+KC7OAS-10_144950	  0
+VE7RYF-10_144970	184
+ W7BPD-11_145630	  0
+VE7SEP-10_145690	234
+ K7KCA-10_440125	1609
+VE7VIC-10_145690	208
+KF7FIT-10_223780	  0
+KI7ULA-10_145050	781
+KB7TEC-10_144990	 59
+ AF5TR-10_145690	  0
+ W7BPD-10_145630	  0
+VE7MOV-10_145070	  0
+KG7WFV-10_145630	  0
+ K6MBY-10_145690	271
+VA7HUR-10_144910	  0
+Number of gateways: in array: 32, in list 32 /home/gunn/tmp/rmsgwprox.txt
+
 ```
 
 #### crontab
