@@ -54,7 +54,7 @@ function aggregate_log() {
     while IFS= read -r line ; do
         # Get connection count
         callsign=$(echo $line | cut -f1 -d' ')
-	conn_cnt=$(tac gateway.log | expand -t1 | tr -s '[[:space:]]' | grep --binary-file=text -im 1 "$callsign" | cut -f9 -d' ')
+	conn_cnt=$(tac $LOGFILE | expand -t1 | tr -s '[[:space:]]' | grep --binary-file=text -im 1 "$callsign" | cut -f9 -d' ')
 
         printf "%10s \t%s  %3s\t%2d\t%4d\n" $(echo $line | cut -f1 -d' ') $(echo $line | cut -f2 -d ' ') $(echo $line | cut -f4 -d' ') $(echo $line | cut -f3 -d' ') "$conn_cnt" >> $OUTFILE_FINAL
     done <<< $(sort -k3 -n $OUTFILE_1 | uniq | awk 'NF{NF-=3};1')
