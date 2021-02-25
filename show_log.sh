@@ -7,40 +7,174 @@
 
 TMPDIR="$HOME/tmp"
 LOGFILE="gateway.log"
+OUTFILE_FINAL="test2.log"
 
-# Get today's date
-date_now=$(date "+%Y %m %d")
-datespec=$date_now
 
-# Find total lines in log file
-total_lines=$(wc -l $TMPDIR/$LOGFILE | cut -d' ' -f1)
+# ===== function check for an integer
 
-if [ $# -gt 0 ] ; then
-    # If there are any arguments then show yesterdays log
+function is_num() {
+    local chk=${1#[+-]};
+    [ "$chk" ] && [ -z "${chk//[0-9]}" ]
+}
 
-    # Get yesterdays date
-    date_yest=$(date --date="yesterday" "+%Y %m %d")
-    datespec=$date_yest
+# ===== function aggregate_log
+
+function aggregate_log() {
+    sed -i '/Finish:\|Start:\|^RMS GW\|^[[:space:]]\|^$/d' test.log | tr -s '[[:space:]]'
+
+    while IFS= read -r line ; do
+        connect=$(echo $line | cut -f7 -d' ')
+        if [ "$connect" == "OK" ] ; then
+            echo "$line"
+        fi
+    done <<< $(awk 'NF{NF-=2};1' < test.log) > test1.log
+
+    #sort  -k3 -n test1.log | uniq
+    #echo "---"
+    #sort -V test1.log | uniq | awk 'NF{NF-=3};1'
+    #echo "---"
+
+    if [ -f "$OUTFILE_FINAL" ] ; then
+        rm "$OUTFILE_FINAL"
+    fi
+
+    # Print header
+    printf " Call Sign\tFrequency  Alpha\tDist\n"
+
+    while IFS= read -r line ; do
+        printf "%10s \t%s  %3s\t%s\n" $(echo $line | cut -f1 -d' ') $(echo $line | cut -f2 -d ' ') $(echo $line | cut -f4 -d' ') $(echo $line | cut -f3 -d' ') | tee -a test2.log
+    done <<< $(sort -k3 -n test1.log | uniq | awk 'NF{NF-=3};1')
+
+    # Print trailer
+    echo "Connected to $(cat $OUTFILE_FINAL | wc -l) gateways."
+}
+
+# ===== function get_logfile
+# grab a chunk of log file between a pair of dates
+# arg 1 = start date
+# arg 2 = end date
+
+function get_logfile() {
+    start_date="$1"
+    end_date="$2"
+
     # Get line number of required dates first entry
-    start_line_numb=$(grep --binary-files=text -n "$date_yest" $TMPDIR/$LOGFILE | head -n 1 | cut -d':' -f1)
+    start_line_numb=$(grep --binary-files=text -n "$start_date" $TMPDIR/$LOGFILE | head -n 1 | cut -d':' -f1)
     start_line_numb=$((start_line_numb-1))
     # Get line number of todays date first entry
-    end_line_numb=$(grep --binary-files=text -n "$date_now" $TMPDIR/$LOGFILE | head -n 1 | cut -d':' -f1)
+    end_line_numb=$(grep --binary-files=text -n "$end_date" $TMPDIR/$LOGFILE | head -n 1 | cut -d':' -f1)
 
     # number of lines starting at yesterdays first log entry
     numb_lines=$((total_lines - start_line_numb))
     # number of lines until start of todays date
     count_lines=$((end_line_numb - start_line_numb - 1))
 
-    echo "Using date: $datespec, starting: $start_line_numb, ending: $end_line_numb, num lines: $count_lines"
+    if [ "$3" != "q" ] ; then
+        echo "Using date: $start_date, starting: $start_line_numb, ending: $end_line_numb, num lines: $count_lines"
+    fi
     tail -n $numb_lines $TMPDIR/$LOGFILE | head -n $count_lines
+}
 
-else
-    # Show todays log
-    start_line_numb=$(grep --binary-files=text -n "$datespec" $TMPDIR/$LOGFILE | head -n 1 | cut -d':' -f1)
-    start_line_numb=$((start_line_numb-1))
-    numb_lines=$((total_lines - start_line_numb))
+# ===== Display program help info
 
-    echo "Using date: $datespec, starting at line number: $start_line_numb, numb_lines: $numb_lines"
-    tail -n $numb_lines $TMPDIR/$LOGFILE
-fi
+function usage () {
+	(
+	echo "Usage: $scriptname [-p <day|week|month>][-v][-h]"
+        echo "   -p <day|week|month> aggregation period"
+        echo "   -v                  turn on verbose display"
+        echo "   -h                  display this message."
+        echo
+	) 1>&2
+	exit 1
+}
+
+#
+# ===== Main ===============================
+
+
+# Find total lines in log file
+total_lines=$(wc -l $TMPDIR/$LOGFILE | cut -d' ' -f1)
+
+# Get today's date
+date_now=$(date "+%Y %m %d")
+
+start_yest=$(date --date="yesterday" "+%Y %m %d")
+start_month=$(date --date="$(date +'%Y-%m-01')" "+%Y %m %d")
+start_week=$(date -d "last week + last monday" "+%Y %m %d")
+
+
+
+# parse any command line options
+while [[ $# -gt 0 ]] ; do
+
+    key="$1"
+    case $key in
+        -p)
+
+            echo "DEBUG: Date check: $start_yest,  $start_week,  $start_month"
+	    echo
+
+	    # aggregate period in number of days
+            agg_period=
+
+	    case "$2" in
+                day)
+		    echo "Aggregation period: yesterday"
+                    start_date=$start_yest
+                ;;
+                week)
+		    echo "Aggregation period: last week"
+                    start_date=$start_week
+	        ;;
+                month)
+		    echo "Aggregation period: this month"
+                    start_date=$start_month
+                ;;
+	        *)
+		    echo "Unknown period, should be one of day, week, month"
+		    echo " Default to day"
+                    start_date=$start_yest
+                ;;
+            esac
+
+            get_logfile "$start_date" "$date_now" q > test.log
+
+	    echo "Aggregated log file from $start_date to $date_now"
+	    echo
+	    aggregate_log
+	    exit 0
+        ;;
+	-y)
+	    # Show yesterday's log
+            # Get yesterdays date
+            start_date=$(date --date="yesterday" "+%Y %m %d")
+            get_logfile "$start_date" "$date_now"
+	    exit 0
+	;;
+        -v)
+            echo "Turning on verbose"
+            bverbose=true
+        ;;
+        -h)
+            usage
+            exit 0
+        ;;
+        *)
+            echo "Undefined argument: $key"
+            usage
+            exit 1
+        ;;
+    esac
+    shift # past argument or value
+done
+
+# Show todays log
+start_date=$date_now
+
+start_line_numb=$(grep --binary-files=text -n "$start_date" $TMPDIR/$LOGFILE | head -n 1 | cut -d':' -f1)
+start_line_numb=$((start_line_numb-1))
+numb_lines=$((total_lines - start_line_numb))
+
+echo "Using date: $start_date, starting at line number: $start_line_numb, numb_lines: $numb_lines"
+tail -n $numb_lines $TMPDIR/$LOGFILE
+
