@@ -6,8 +6,11 @@
 # DEBUG=1
 
 TMPDIR="$HOME/tmp"
-LOGFILE="gateway.log"
-OUTFILE_FINAL="test2.log"
+LOGFILE="$TMPDIR/gateway.log"
+
+OUTFILE_0="$TMPDIR/test.log"
+OUTFILE_1="$TMPDIR/test1.log"
+OUTFILE_FINAL="$TMPDIR/test2.log"
 
 
 # ===== function check for an integer
@@ -20,31 +23,43 @@ function is_num() {
 # ===== function aggregate_log
 
 function aggregate_log() {
-    sed -i '/Finish:\|Start:\|^RMS GW\|^[[:space:]]\|^$/d' test.log | tr -s '[[:space:]]'
+
+###if [ 1 -eq 0 ] ; then
+    # sed -i 's/[^[:print:]]//' $OUTFILE_0
+
+    # Get rid of any embedded null characters
+    sed -i 's/\x0//g' $OUTFILE_0
+    # Get rid of any error or header lines
+    sed -i '/RIG CTRL\|Failed to\|Finish:\|Start:\|^RMS GW\|^[[:space:]]\|^$/d' $OUTFILE_0 | tr -s '[[:space:]]'
 
     while IFS= read -r line ; do
         connect=$(echo $line | cut -f7 -d' ')
         if [ "$connect" == "OK" ] ; then
             echo "$line"
         fi
-    done <<< $(awk 'NF{NF-=2};1' < test.log) > test1.log
+    done <<< $(awk 'NF{NF-=2};1' < $OUTFILE_0) > $OUTFILE_1
 
-    #sort  -k3 -n test1.log | uniq
+    #sort  -k3 -n $OUTFILE_1 | uniq
     #echo "---"
-    #sort -V test1.log | uniq | awk 'NF{NF-=3};1'
+    #sort -V $OUTFILE_1 | uniq | awk 'NF{NF-=3};1'
     #echo "---"
 
     if [ -f "$OUTFILE_FINAL" ] ; then
         rm "$OUTFILE_FINAL"
     fi
-
+###fi
     # Print header
-    printf " Call Sign\tFrequency  Alpha\tDist\n"
+    printf " Call Sign\tFrequency  Alpha\tDist\tCnt\n"
 
     while IFS= read -r line ; do
-        printf "%10s \t%s  %3s\t%s\n" $(echo $line | cut -f1 -d' ') $(echo $line | cut -f2 -d ' ') $(echo $line | cut -f4 -d' ') $(echo $line | cut -f3 -d' ') | tee -a test2.log
-    done <<< $(sort -k3 -n test1.log | uniq | awk 'NF{NF-=3};1')
+        # Get connection count
+        callsign=$(echo $line | cut -f1 -d' ')
+	conn_cnt=$(tac gateway.log | expand -t1 | tr -s '[[:space:]]' | grep --binary-file=text -im 1 "$callsign" | cut -f9 -d' ')
 
+        printf "%10s \t%s  %3s\t%2d\t%4d\n" $(echo $line | cut -f1 -d' ') $(echo $line | cut -f2 -d ' ') $(echo $line | cut -f4 -d' ') $(echo $line | cut -f3 -d' ') "$conn_cnt" >> $OUTFILE_FINAL
+    done <<< $(sort -k3 -n $OUTFILE_1 | uniq | awk 'NF{NF-=3};1')
+
+    sort -k5 -r -n $OUTFILE_FINAL | tee -a connection.log
     # Print trailer
     echo "Connected to $(cat $OUTFILE_FINAL | wc -l) gateways."
 }
@@ -59,10 +74,10 @@ function get_logfile() {
     end_date="$2"
 
     # Get line number of required dates first entry
-    start_line_numb=$(grep --binary-files=text -n "$start_date" $TMPDIR/$LOGFILE | head -n 1 | cut -d':' -f1)
+    start_line_numb=$(grep --binary-files=text -n "$start_date" $LOGFILE | head -n 1 | cut -d':' -f1)
     start_line_numb=$((start_line_numb-1))
     # Get line number of todays date first entry
-    end_line_numb=$(grep --binary-files=text -n "$end_date" $TMPDIR/$LOGFILE | head -n 1 | cut -d':' -f1)
+    end_line_numb=$(grep --binary-files=text -n "$end_date" $LOGFILE | head -n 1 | cut -d':' -f1)
 
     # number of lines starting at yesterdays first log entry
     numb_lines=$((total_lines - start_line_numb))
@@ -72,7 +87,7 @@ function get_logfile() {
     if [ "$3" != "q" ] ; then
         echo "Using date: $start_date, starting: $start_line_numb, ending: $end_line_numb, num lines: $count_lines"
     fi
-    tail -n $numb_lines $TMPDIR/$LOGFILE | head -n $count_lines
+    tail -n $numb_lines $LOGFILE | head -n $count_lines
 }
 
 # ===== Display program help info
@@ -93,7 +108,7 @@ function usage () {
 
 
 # Find total lines in log file
-total_lines=$(wc -l $TMPDIR/$LOGFILE | cut -d' ' -f1)
+total_lines=$(wc -l $LOGFILE | cut -d' ' -f1)
 
 # Get today's date
 date_now=$(date "+%Y %m %d")
@@ -118,6 +133,10 @@ while [[ $# -gt 0 ]] ; do
             agg_period=
 
 	    case "$2" in
+	        all)
+                    start_date=$(head $LOGFILE  | grep -i "Start" | cut -f2 -d':' | sed 's/^[[:blank:]]*//' | rev | cut -f2- -d' ' | rev)
+		    echo "DEBUG: all start: $start_date"
+		;;
                 day)
 		    echo "Aggregation period: yesterday"
                     start_date=$start_yest
@@ -137,7 +156,7 @@ while [[ $# -gt 0 ]] ; do
                 ;;
             esac
 
-            get_logfile "$start_date" "$date_now" q > test.log
+            get_logfile "$start_date" "$date_now" q > $OUTFILE_0
 
 	    echo "Aggregated log file from $start_date to $date_now"
 	    echo
@@ -171,10 +190,10 @@ done
 # Show todays log
 start_date=$date_now
 
-start_line_numb=$(grep --binary-files=text -n "$start_date" $TMPDIR/$LOGFILE | head -n 1 | cut -d':' -f1)
+start_line_numb=$(grep --binary-files=text -n "$start_date" $LOGFILE | head -n 1 | cut -d':' -f1)
 start_line_numb=$((start_line_numb-1))
 numb_lines=$((total_lines - start_line_numb))
 
 echo "Using date: $start_date, starting at line number: $start_line_numb, numb_lines: $numb_lines"
-tail -n $numb_lines $TMPDIR/$LOGFILE
+tail -n $numb_lines $LOGFILE
 
