@@ -4,6 +4,7 @@
 
 # Uncomment this statement for debug echos
 # DEBUG=1
+scriptname="`basename $0`"
 
 TMPDIR="$HOME/tmp"
 LOGFILE="$TMPDIR/gateway.log"
@@ -12,6 +13,8 @@ OUTFILE_0="$TMPDIR/test.log"
 OUTFILE_1="$TMPDIR/test1.log"
 OUTFILE_FINAL="$TMPDIR/test2.log"
 
+
+function dbgecho { if [ ! -z "$DEBUG" ] ; then echo "$*"; fi }
 
 # ===== function check for an integer
 
@@ -94,7 +97,7 @@ function get_logfile() {
 
 function usage () {
 	(
-	echo "Usage: $scriptname [-p <day|week|month>][-v][-h]"
+	echo "Usage: $scriptname [-p <day|week|month|year>][-v][-h]"
         echo "   -p <day|week|month> aggregation period"
         echo "   -v                  turn on verbose display"
         echo "   -h                  display this message."
@@ -114,9 +117,11 @@ total_lines=$(wc -l $LOGFILE | cut -d' ' -f1)
 date_now=$(date "+%Y %m %d")
 
 start_yest=$(date --date="yesterday" "+%Y %m %d")
-start_month=$(date --date="$(date +'%Y-%m-01')" "+%Y %m %d")
-start_week=$(date -d "last week + last monday" "+%Y %m %d")
-
+#start_month=$(date --date="$(date +'%Y-%m-01')" "+%Y %m %d")
+start_month=$(date --date="30 day ago" "+%Y %m %d")
+#start_week=$(date -d "last week + last monday" "+%Y %m %d")
+start_week=$(date -d "7 day ago" "+%Y %m %d")
+start_year=$(date --date="$(date +%Y-01-01)" "+%Y %m %d")
 
 
 # parse any command line options
@@ -126,13 +131,21 @@ while [[ $# -gt 0 ]] ; do
     case $key in
         -p)
 
-            echo "DEBUG: Date check: $start_yest,  $start_week,  $start_month"
-	    echo
+            dbgecho "DEBUG: Date check: $start_yest,  $start_week,  $start_month"
+	    dbgecho
 
 	    # aggregate period in number of days
             agg_period=
 
 	    case "$2" in
+	        lastyear)
+		    echo "Aggregation period: lastyear"
+		    start_date=$(date -d "last year" "+%Y %m %d")
+		;;
+		thisyear)
+		    echo "Aggregation period: year-to-date"
+		    start_date=$(date --date=$(date +'%Y-01-01') "+%Y %m %d")
+		;;
 	        all)
                     start_date=$(head $LOGFILE  | grep -i "Start" | cut -f2 -d':' | sed 's/^[[:blank:]]*//' | rev | cut -f2- -d' ' | rev)
 		    echo "DEBUG: all start: $start_date"
@@ -146,7 +159,7 @@ while [[ $# -gt 0 ]] ; do
                     start_date=$start_week
 	        ;;
                 month)
-		    echo "Aggregation period: this month"
+		    echo "Aggregation period: last month"
                     start_date=$start_month
                 ;;
 	        *)
