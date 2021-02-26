@@ -35,6 +35,9 @@ gridsquare=
 # Will refresh RMS list if true
 b_refresh_gwlist=true
 
+# baud rate change has occurred
+baud_change=false
+
 # Default to paclink-unix config file
 AX25PORTNAME=
 
@@ -49,21 +52,23 @@ bhave_gps=true
 scriptname="`basename $0`"
 TMPDIR="$HOME/tmp"
 GATEWAY_LOGFILE="$TMPDIR/gateway.log"
+
 RMS_STATS_FILE="$TMPDIR/rmsgw_stats.log"
+
 GATEWAY_REJECT_FILE="$TMPDIR/gateway_reject.txt"
 AXPORTS_FILE="/etc/ax25/axports"
 declare -A row
 
-BINDIR="$HOME/bin"
+HOME_BINDIR="$HOME/bin"
 LOCAL_BINDIR="/usr/local/bin"
 
 RIGCTL="$LOCAL_BINDIR/rigctl"
 WL2KAX25="$LOCAL_BINDIR/wl2kax25"
 
- Choose which radio left (VFOA) or right (VFOB) is DATA Radio
+# Choose which radio left (VFOA) or right (VFOB) is DATA Radio
 DATBND="VFOA"
 
-DIGI_FREQ_LIST="$BINDIR/freqlist_digi.txt"
+DIGI_FREQ_LIST="$HOME_BINDIR/freqlist_digi.txt"
 RMS_PROXIMITY_FILE_OUT="$TMPDIR/rmsgwprox.txt"
 
 BAND_2M_LO_LIM=144000000
@@ -536,6 +541,23 @@ function check_radio_mem() {
     chan_freq=$(grep -i "Freq:" <<<"$chan_info" | head -n1 | tr -s '[[:space:]] ' | cut -d ' ' -f2)
 }
 
+# ===== function check_baudrate
+# arg1: baudrate (either 1200 or 9600)
+
+function check_baudrate() {
+    current_brate=$(grep -i "^MODEM" /etc/direwolf.conf | head -n1 | cut -d' ' -f2)
+    if [ $current_brate -eq $1 ] ; then
+        echo "${FUNCNAME[0]}: requested baud rate matches current baud rate"
+	return
+    else
+        echo "${FUNCNAME[0]}: request baud rate change: current: $current_brate, request: $1"
+    fi
+    # Not quite there yet
+      # $HOME_BINDIR/speed_switch.sh -b $1
+      # Set baud rate change has occurred
+      #baud_change=true
+}
+
 # ===== function check_gateway
 # arg1: gateway frequency
 # arg2: gateway call sign
@@ -660,10 +682,10 @@ function get_gateway_list() {
         # rmsglist arg1=distance in miles, arg2=grid square, arg3=mute output
         # Create file in $HOME/tmp/rmsgwprox.txt
 
-#        echo "DEBUG: rmslist: $BINDIR/rmslist.sh $GWDIST $gridsquare S"
+#        echo "DEBUG: rmslist: $HOME_BINDIR/rmslist.sh $GWDIST $gridsquare S"
         # Third argument for rmslist is silent option
-        $BINDIR/rmslist.sh $GWDIST $gridsquare S
-#        $BINDIR/rmslist.sh $GWDIST $gridsquare
+        $HOME_BINDIR/rmslist.sh $GWDIST $gridsquare S
+#        $HOME_BINDIR/rmslist.sh $GWDIST $gridsquare
 
         # Does RMS Gateway proximitiy file exist?
         if [ -e $RMS_PROXIMITY_FILE_OUT ] ; then
@@ -775,10 +797,19 @@ while [[ $# -gt 0 ]] ; do
          echo "Set test rig control only flag"
          ;;
       -s|--stats)
+         # Create a temporary stat file
+	 RMS_STATS_TMP_REPORT=$(mktemp /tmp/$(basename $0).XXXXXXXX)
+
+	 if [ -s $RMS_STATS_TMP_REPORT ] ; then
+	     echo "Deleting existing file: $RMS_STATS_TMP_REPORT"
+	     rm $RMS_STATS_TMP_REPORT
+	 fi
          printf "     Gateway\t\tConnects\n"
          for i in "${!row[@]}" ; do
-             printf "%16s\t%3s\n" "$i" "${row[$i]}"
+             printf "%16s\t%3s\n" "$i" "${row[$i]}" >> $RMS_STATS_TMP_REPORT
          done
+
+	 sort -k2 -n -r $RMS_STATS_TMP_REPORT
          echo "Number of gateways: in array: ${#row[@]}, in list $(wc -l $RMS_PROXIMITY_FILE_OUT)"
          exit 0
          ;;
@@ -801,9 +832,9 @@ done
 if ! $b_crontab ; then
     # This script uses these programs
     # It also uses gpsd but only if it is installed
-    PROGRAM_LIST="rigctl rmslist.sh"
+    PROGRAM_LIST="rigctl rmslist.sh speed_switch.sh"
     if $bhave_gps ; then
-        PROGRAM_LIST="rigctl rmslist.sh latlon2grid"
+        PROGRAM_LIST="${PROGRAM_LIST} latlon2grid"
     fi
     b_exitnow=false
     for progname in $PROGRAM_LIST ; do
@@ -848,7 +879,7 @@ if $bhave_gps ; then
             # Assume latlon2grid installed to ~/bin
             # Arguments need to be in decimal degrees ie:
             #  48.48447 -122.901885
-            gridsquare=$($BINDIR/latlon2grid $lat $lon)
+            gridsquare=$($HOME_BINDIR/latlon2grid $lat $lon)
         fi
     fi
 fi
@@ -1005,7 +1036,10 @@ while read fileline ; do
         chan_status="OK"
         gateway_count=$((gateway_count + 1))
 
-        # Try to connect with RMS Gateway
+	# Check if baudrate change is required
+	check_baudrate "$baud_rate"
+
+        # Set frequency and try to connect with RMS Gateway
         check_gateway $wl_freq "$gw_name"
         retcode=$?
         if [ $b_test_connect = true ] ; then
@@ -1022,6 +1056,9 @@ while read fileline ; do
                 echo
             fi
         fi
+	if [ $baud_change = true ] ; then
+            check_baudrate 1200
+	fi
     else
 #        dbgecho "Changing channel status to 'Unqaul' for freq: $wl_freq & gateway $gw_name"
         find_mem_chan $wl_freq
