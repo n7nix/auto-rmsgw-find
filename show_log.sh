@@ -23,11 +23,28 @@ function is_num() {
     [ "$chk" ] && [ -z "${chk//[0-9]}" ]
 }
 
+# ===== function refresh_remote_log
+# get remote gateway log file so can run on workstation
+# Current workstation hostname = beeble
+
+function refresh_remote_log() {
+    hostname="$(hostname)"
+    if [ "$hostname" = "beeble" ] ; then
+
+        rsync --quiet -av -e ssh gunn@10.0.42.85:tmp/gateway.log $TMPDIR
+	if [ $? -ne 0 ] ; then
+	    echo "Refresh of gateway log file FAILED"
+	    exit 1
+	else
+            echo "Successfully refreshed RMS Gateway log file"
+	fi
+    fi
+}
+
 # ===== function aggregate_log
 
 function aggregate_log() {
 
-###if [ 1 -eq 0 ] ; then
     # sed -i 's/[^[:print:]]//' $OUTFILE_0
 
     # Get rid of any embedded null characters
@@ -35,6 +52,7 @@ function aggregate_log() {
     # Get rid of any error or header lines
     sed -i '/RIG CTRL\|Failed to\|Finish:\|Start:\|^RMS GW\|^[[:space:]]\|^$/d' $OUTFILE_0 | tr -s '[[:space:]]'
 
+    # Filter Gateways that were able to connect
     while IFS= read -r line ; do
         connect=$(echo $line | cut -f7 -d' ')
         if [ "$connect" == "OK" ] ; then
@@ -42,21 +60,22 @@ function aggregate_log() {
         fi
     done <<< $(awk 'NF{NF-=2};1' < $OUTFILE_0) > $OUTFILE_1
 
-    #sort  -k3 -n $OUTFILE_1 | uniq
-    #echo "---"
-    #sort -V $OUTFILE_1 | uniq | awk 'NF{NF-=3};1'
-    #echo "---"
-
     if [ -f "$OUTFILE_FINAL" ] ; then
         rm "$OUTFILE_FINAL"
     fi
-###fi
+
     # Print header
     printf " Call Sign\tFrequency  Alpha\tDist\tCnt\n"
 
+    # Create final output file
     while IFS= read -r line ; do
         # Get connection count
         callsign=$(echo $line | cut -f1 -d' ')
+	# tac - display file starting from bottom of file
+	# expand - convert tabs to spaces
+	# tr -s comparess all spaces
+	# grep - look for first occurrance of $callsign
+	# cut - get connection count
 	conn_cnt=$(tac $LOGFILE | expand -t1 | tr -s '[[:space:]]' | grep --binary-file=text -im 1 "$callsign" | cut -f9 -d' ')
 
         printf "%10s \t%s  %3s\t%2d\t%4d\n" $(echo $line | cut -f1 -d' ') $(echo $line | cut -f2 -d ' ') $(echo $line | cut -f4 -d' ') $(echo $line | cut -f3 -d' ') "$conn_cnt" >> $OUTFILE_FINAL
@@ -97,8 +116,8 @@ function get_logfile() {
 
 function usage () {
 	(
-	echo "Usage: $scriptname [-p <day|week|month|year>][-v][-h]"
-        echo "   -p <day|week|month> aggregation period"
+	echo "Usage: $scriptname [-p <day|week|month|year|thisyear>][-v][-h]"
+        echo "   -p <day|week|month|year|thisyear> aggregation period"
         echo "   -v                  turn on verbose display"
         echo "   -h                  display this message."
         echo
@@ -123,12 +142,22 @@ start_month=$(date --date="30 day ago" "+%Y %m %d")
 start_week=$(date -d "7 day ago" "+%Y %m %d")
 start_year=$(date --date="$(date +%Y-01-01)" "+%Y %m %d")
 
+# if hostname is beeble then assume running on workstation & not
+# machine collecting data
+# Refresh gateway log file from collection machine
+
+refresh_remote_log
 
 # parse any command line options
 while [[ $# -gt 0 ]] ; do
 
     key="$1"
     case $key in
+        -d)
+            # Set debug flag
+             DEBUG=1
+	     dbgecho "DEBUG flag set, ARGS on command line: $#"
+        ;;
         -p)
 
             dbgecho "DEBUG: Date check: $start_yest,  $start_week,  $start_month"
@@ -138,8 +167,8 @@ while [[ $# -gt 0 ]] ; do
             agg_period=
 
 	    case "$2" in
-	        lastyear)
-		    echo "Aggregation period: lastyear"
+	        year)
+		    echo "Aggregation period: year"
 		    start_date=$(date -d "last year" "+%Y %m %d")
 		;;
 		thisyear)
@@ -163,7 +192,7 @@ while [[ $# -gt 0 ]] ; do
                     start_date=$start_month
                 ;;
 	        *)
-		    echo "Unknown period, should be one of day, week, month"
+		    echo "Unknown period, should be one of day, week, month, year, thisyear"
 		    echo " Default to day"
                     start_date=$start_yest
                 ;;
