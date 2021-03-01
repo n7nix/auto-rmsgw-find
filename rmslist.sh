@@ -10,9 +10,13 @@
 # If you need to download it get it from here:
 # http://stedolan.github.io/jq/download/
 #
+# Run n7nix/bin/getalpha.sh in directory n7nix/rmsgw
+# getalpha.sh > freq_alpha.txt
+# This is a static file that is checked-in to github
 
 myname="`basename $0`"
 
+FILE_ALPHA_FREQ="$HOME/n7nix/rmsgw/freq_alpha.txt"
 #TMPDIR="/tmp"
 TMPDIR="$HOME/tmp"
 RMS_PROXIMITY_FILE_RAW="$TMPDIR/rmsgwprox.json"
@@ -110,7 +114,6 @@ if (( $# > 0 )) && [ -n "$1" ] ; then
   fi
 fi
 
-
 # check for a second command line argument - grid square
 
 if (( $# >= 2 )) ; then
@@ -126,7 +129,6 @@ fi
 if (( $# >= 3 )) ; then
     silent=true
 fi
-
 
 # Convert grid square to upper case
 grid_square=$(echo "$grid_square" | tr '[a-z]' '[A-Z]')
@@ -174,7 +176,7 @@ if $do_it_flag ; then
 #   curl -s http://server.winlink.org:8085"/json/reply/GatewayProximity?GridSquare=$grid_square&MaxDistance=$max_distance" > $RMS_PROXIMITY_FILE_RAW
     # V5 Winlink Web Services
 #
-# svc_url="https://api.winlink.org/gateway/proximity?GridSquare=$grid_square&MaxDistance=$max_distance&Key=$WL_KEY&format=json"
+# svc_url="https://api.winlink.org/gateway/proximity?GridSquare=$grid_square&ServiceCodes=PUBLIC,EMCOMM&MaxDistance=$max_distance&Key=$WL_KEY&format=json"
 
 # Add service codes: PUBLIC & EMCOMM
     svc_url="https://api.winlink.org/gateway/proximity?GridSquare=$grid_square&ServiceCodes=$service&MaxDistance=$max_distance&Key=$WL_KEY&format=json"
@@ -216,8 +218,16 @@ fi
 
 dbgecho "Have good request json"
 
+# Just for testing purposes
+# if freq_alpha file does not exist in expected location then
+#  check in dev directory
+if [ ! -s "$FILE_ALPHA_FREQ" ] ; then
+    FILE_ALPHA_FREQ="$HOME/dev/github/n7nix/rmsgw/freq_alpha.txt"
+fi
+
 # Parse the JSON file
 # cat $RMS_PROXIMITY_FILE_RAW | jq '.GatewayList[] | {Callsign, Frequency, Distance}' > $RMS_PROXIMITY_FILE_PARSE
+ count=0
 
 if $silent ; then
 
@@ -234,10 +244,13 @@ if $silent ; then
         printf ' %-10s\t%10s\t%s\t%4s\n' "$callsign" "$frequency" "$distance" "$baud"
     done 2>&1 > $RMS_PROXIMITY_FILE_OUT
 else
-
+    dbgecho "Non silent display"
     # Print the table header
-    echo "  Callsign       Frequency  Distance    Baud    Service"
-
+    if [ -s "$FILE_ALPHA_FREQ" ] ; then
+        echo "  Callsign       Frequency  Alpha    Distance   Baud    Service"
+    else
+        echo "  Callsign       Frequency  Distance    Baud    Service"
+    fi
     # iterate through the JSON parsed file
     for k in $(jq '.GatewayList | keys | .[]' $RMS_PROXIMITY_FILE_RAW); do
         value=$(jq -r ".GatewayList[$k]" $RMS_PROXIMITY_FILE_RAW);
@@ -249,8 +262,25 @@ else
         distance=$(jq -r '.Distance' <<< $value);
         service=$(jq -r '.ServiceCode' <<< $value);
 
-        printf ' %-10s\t%10s\t%s\t%4s\t%s\n' "$callsign" "$frequency" "$distance" "$baud" "$service"
-    done 2>&1 | tee $RMS_PROXIMITY_FILE_OUT
+	if [ -s "$FILE_ALPHA_FREQ" ] ; then
+	    # if there is a frequency to alpha file around print that field
+	    alpha=$(grep -i $frequency $FILE_ALPHA_FREQ | cut -d' ' -f2)
+	    grep --quiet "NET-" <<< $alpha
+	    if [ "$?" -ne 0 ] ; then
+	        alpha="  n/a"
+	    fi
+            printf ' %-10s\t%10s  %6s\t%s\t%4s\t%s\n' "$callsign" "$frequency" $alpha "$distance" "$baud" "$service"
+
+	else
+            printf ' %-10s\t%10s\t%s\t%4s\t%s\n' "$callsign" "$frequency" "$distance" "$baud" "$service"
+	fi
+
+	# Count total number of RMS Gateways found
+	(( ++count ))
+    # This fixes variable scope with count
+    done  > >(tee "$RMS_PROXIMITY_FILE_OUT") 2>&1
+
+    echo "Found $count RMS Gateways"  | tee -a "$RMS_PROXIMITY_FILE_OUT"
 fi
 
 exit 0
