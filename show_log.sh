@@ -36,7 +36,7 @@ function refresh_remote_log() {
 	    echo "Refresh of gateway log file FAILED"
 	    exit 1
 	else
-            echo "Successfully refreshed RMS Gateway log file"
+            dbgecho "Successfully refreshed RMS Gateway log file"
 	fi
     fi
 }
@@ -129,9 +129,6 @@ function usage () {
 # ===== Main ===============================
 
 
-# Find total lines in log file
-total_lines=$(wc -l $LOGFILE | cut -d' ' -f1)
-
 # Get today's date
 date_now=$(date "+%Y %m %d")
 
@@ -147,6 +144,9 @@ start_year=$(date --date="$(date +%Y-01-01)" "+%Y %m %d")
 # Refresh gateway log file from collection machine
 
 refresh_remote_log
+
+# Find total lines in log file
+total_lines=$(wc -l $LOGFILE | cut -d' ' -f1)
 
 # parse any command line options
 while [[ $# -gt 0 ]] ; do
@@ -200,7 +200,13 @@ while [[ $# -gt 0 ]] ; do
 
             get_logfile "$start_date" "$date_now" q > $OUTFILE_0
 
-	    echo "Aggregated log file from $start_date to $date_now"
+	    # Get grid square
+	    grid_square=$(grep --binary-file=text -i "grid: " $LOGFILE | tail -n 1 | cut -d',' -f1  | cut -d':' -f6)
+	    # Remove preceeding white space
+            grid_square="$(sed -e 's/^[[:space:]]*//' <<<"$grid_square")"
+
+
+	    echo "Aggregated log file from $start_date to $date_now for grid square: $grid_square"
 	    echo
 	    aggregate_log
 	    exit 0
