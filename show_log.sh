@@ -69,14 +69,18 @@ function aggregate_log() {
 
     # Create final output file
     while IFS= read -r line ; do
-        # Get connection count
+        # Get connection count,
+	#  -need search on both call sign & frequency
         callsign=$(echo $line | cut -f1 -d' ')
+        frequency=$(echo $line | cut -f2 -d' ')
+	# echo "DEBUG: $line, call sign: $callsign, freq: $frequency"
+
 	# tac - display file starting from bottom of file
 	# expand - convert tabs to spaces
 	# tr -s comparess all spaces
-	# grep - look for first occurrance of $callsign
+	# grep - look for first occurrance of "$callsign $frequency"
 	# cut - get connection count
-	conn_cnt=$(tac $LOGFILE | expand -t1 | tr -s '[[:space:]]' | grep --binary-file=text -im 1 "$callsign" | cut -f9 -d' ')
+	conn_cnt=$(tac $LOGFILE | expand -t1 | tr -s '[[:space:]]' | grep --binary-file=text -im 1 "$callsign $frequency" | cut -f9 -d' ')
 
         printf "%10s \t%s  %3s\t%2d\t%4d\n" $(echo $line | cut -f1 -d' ') $(echo $line | cut -f2 -d ' ') $(echo $line | cut -f4 -d' ') $(echo $line | cut -f3 -d' ') "$conn_cnt" >> $OUTFILE_FINAL
     done <<< $(sort -k3 -n $OUTFILE_1 | uniq | awk 'NF{NF-=3};1')
