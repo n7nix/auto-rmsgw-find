@@ -121,9 +121,11 @@ function get_logfile() {
 function usage () {
 	(
 	echo "Usage: $scriptname [-p <day|week|month|year|thisyear>][-v][-h]"
+	echo "   no args           display today's log file"
         echo "   -p <day|week|month|year|thisyear> aggregation period"
-        echo "   -v                  turn on verbose display"
-        echo "   -h                  display this message."
+        echo "   -v                turn on verbose display"
+	echo "   -y                display yesterday's log file"
+        echo "   -h                display this message."
         echo
 	) 1>&2
 	exit 1
