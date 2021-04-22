@@ -56,6 +56,7 @@ function aggregate_log() {
     while IFS= read -r line ; do
         connect=$(echo $line | cut -f7 -d' ')
         if [ "$connect" == "OK" ] ; then
+	    # Output line to temporary file
             echo "$line"
         fi
     done <<< $(awk 'NF{NF-=2};1' < $OUTFILE_0) > $OUTFILE_1
@@ -65,7 +66,7 @@ function aggregate_log() {
     fi
 
     # Print header
-    printf " Call Sign\tFrequency  Alpha\tDist\tCnt\n"
+    printf " Call Sign\tFrequency  Alpha\tDist\t Cnt\n"
 
     # Create final output file
     while IFS= read -r line ; do
@@ -73,19 +74,14 @@ function aggregate_log() {
 	#  -need search on both call sign & frequency
         callsign=$(echo $line | cut -f1 -d' ')
         frequency=$(echo $line | cut -f2 -d' ')
-	# echo "DEBUG: $line, call sign: $callsign, freq: $frequency"
 
-	# tac - display file starting from bottom of file
-	# expand - convert tabs to spaces
-	# tr -s comparess all spaces
-	# grep - look for first occurrance of "$callsign $frequency"
-	# cut - get connection count
-	conn_cnt=$(tac $LOGFILE | expand -t1 | tr -s '[[:space:]]' | grep --binary-file=text -im 1 "$callsign $frequency" | cut -f9 -d' ')
+        conn_cnt=$(cat $OUTFILE_1 | expand -t1 | tr -s '[[:space:]]' | grep --binary-file=text -c -i "$callsign $frequency")
 
         printf "%10s \t%s  %3s\t%2d\t%4d\n" $(echo $line | cut -f1 -d' ') $(echo $line | cut -f2 -d ' ') $(echo $line | cut -f4 -d' ') $(echo $line | cut -f3 -d' ') "$conn_cnt" >> $OUTFILE_FINAL
-    done <<< $(sort -k3 -n $OUTFILE_1 | uniq | awk 'NF{NF-=3};1')
+    done <<< $(sort -r -k3,3 -n $OUTFILE_1 | uniq | awk 'NF{NF-=3};1')
 
-    sort -k5 -r -n $OUTFILE_FINAL | tee -a connection.log
+    # Sort on column 5 numeric, reverse order then column 4 numeric
+    sort  -k5rn -k4,4n $OUTFILE_FINAL | tee -a connection.log
     # Print trailer
     echo "Connected to $(cat $OUTFILE_FINAL | wc -l) gateways."
 }
