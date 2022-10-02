@@ -150,6 +150,9 @@ refresh_remote_log
 # Find total lines in log file
 total_lines=$(wc -l $LOGFILE | cut -d' ' -f1)
 
+# DEBUG
+echo "Total lines: $total_lines in file: $LOGFILE"
+
 # parse any command line options
 while [[ $# -gt 0 ]] ; do
 
@@ -240,10 +243,30 @@ done
 # Show todays log
 start_date=$date_now
 
-start_line_numb=$(grep --binary-files=text -n "$start_date" $LOGFILE | head -n 1 | cut -d':' -f1)
+if [ ! -z "$DEBUG" ] ; then
+    echo "DEBUG0: $start_date, $LOGFILE"
+    egrep "$start_date" --binary-files=text -n $LOGFILE
+
+    echo "DEBUG1: $start_date, $LOGFILE"
+    egrep "$start_date" --binary-files=text -n $LOGFILE  | head -n 1
+
+    echo "DEBUG2: $start_date, $LOGFILE"
+    egrep "$start_date" --binary-files=text -n $LOGFILE | head -n 1 | cut -d':' -f1
+fi
+
+start_line_numb="$(grep --binary-files=text -n "$start_date" $LOGFILE | head -n 1 | cut -d':' -f1)"
+dbgecho "Debug: start_line_numb1: $start_line_numb"
+
+if [ -z "$start_line_numb" ] ; then
+    echo "Error calculating starting line number"
+    echo "Using date: -$start_date-, starting at line number: $start_line_numb"
+fi
+
 start_line_numb=$((start_line_numb-1))
+dbgecho "Debug: start_line_numb2: $start_line_numb"
+
 numb_lines=$((total_lines - start_line_numb))
 
-echo "Using date: $start_date, starting at line number: $start_line_numb, numb_lines: $numb_lines"
+dbgecho "Using date: -$start_date-, starting at line number: $start_line_numb, numb_lines: $numb_lines"
 tail -n $numb_lines $LOGFILE
 
